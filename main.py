@@ -2,10 +2,13 @@
 # https://www.videolan.org/
 import dropbox, vlc, os, time, subprocess
 import message as m
+import player as p
 
 music_format = ['mp3', 'flac', 'm4a']
 manifest = list()
 playlist = list()
+
+audio_player = p.AudioPlayer()
 
 def download(dbx, file_path: str):
     try:
@@ -31,6 +34,7 @@ def sync_music(dbx, music_path: list):
     full_path = ''
     for sub in music_path: full_path += f'/{sub}'
     cache_path = f'./Cache{full_path}'
+    m.out(f'Download from [{full_path}] to [{cache_path}]')
     if os.path.exists(cache_path) and os.path.isfile(cache_path):
         return cache_path
 
@@ -42,27 +46,31 @@ def sync_music(dbx, music_path: list):
         file.write(data)
     return cache_path
 
-def play_music(dbx, music_path: list):
-    cache_path = sync_music(dbx, music_path)
-    if not cache_path: return None
-
-    player = vlc.MediaPlayer(cache_path)
-    player.play()
-
-    time.sleep(1)
-    while player.is_playing(): time.sleep(1)
-
 def playlist_updated():
     m.out('playlist updated')
 
-def print_menu():
-    menu = '[P (id)] Play or Pause, [N] Next file, [S] Current status, '
-    menu = menu + '[D] Delete from playlist, [I] Insert to playlist, '
-    menu = menu + '[M id] Play mode (1: default, 2: repeat, 3: shuffle), [Q] Quit.'
-    m.out(menu)
+need_help = True
+def print_menu(detail = False):
+    if detail:
+        menu = '[P (id)] Play or Pause, [N] Next file, [S] Current status, '
+        menu = menu + '[D] Delete from playlist, [I] Insert to playlist, '
+        menu = menu + '[M id] Play mode (1: default, 2: repeat, 3: shuffle), [Q] Quit.'
+        m.out(menu)
+    else:
+        m.out('Welcome! Please input your command, [H] for more help.')
+
+def play_song(dbx, path: str):
+    m.out('Downloading file...')
+    cache_path = sync_music(dbx, path.strip('/').split('/'))
+    if not cache_path:
+        m.out('Download failed!')
+        return None
+
+    m.out('Download completed')
+    audio_player.play(cache_path)
 
 def main():
-    global playlist
+    global playlist, need_help
     tokens = ['', '']
     with open('token.txt', 'r', encoding='utf-8') as file:
         tokens[0] = file.read()
@@ -81,17 +89,25 @@ def main():
     m.out('Music Library manifest info synced completed')
 
     while True:
-        print_menu()
+        print_menu(need_help)
+        need_help = False
+
         i = input().upper()
         if i == 'Q': break
         elif i.startswith('P'):
-            if i == 'P': m.out('Pausing...')
+            if i == 'P':
+                m.out('Pausing...')
+                audio_player.pause()
             elif ' ' in i and i.split(' ')[1].isdigit():
                 id = int(i.split(' ')[1])
-                if id == 0: m.out('Resuming...')
+                if id == 0:
+                    m.out('Resuming...')
+                    audio_player.resume()
                 elif id >= 1 and id <= len(playlist):
                     m.out(f'Start play: id = {id}, name = [{playlist[id-1]}]')
+                    play_song(dbx, playlist[id-1])
                 else: m.out('Id out of range!')
+            else: m.out('No avaliable id!')
         elif i.startswith('I'):
             with open('./cache.txt', 'w', encoding='utf-8') as file:
                 for l in manifest: file.write(f'-{l}\n')
@@ -136,6 +152,14 @@ def main():
                 m.out(f'New playlist size is {len(playlist)}')
             except subprocess.CalledProcessError as e:
                 m.out('No update to playlist')
+        elif i.startswith('S'):
+            status = f'{"Playing" if audio_player.is_playing() else "Paused"}: '
+            status = status + f'[{audio_player.current_file if audio_player.current_file else "NULL"}]; '
+            current_time, total_length = audio_player.get_progress()
+            status = status + f'({current_time//1000}s / {total_length//1000}s)'
+            m.out(status)
+        elif i.startswith('H'):
+            need_help = True
         else: m.out('Unexpected input!')
     m.out('Bye~')
 

@@ -1,3 +1,6 @@
+# Tested on MacOS
+# python3 update_manifest.py
+
 import os
 
 ignore_files = ['.DS_Store']

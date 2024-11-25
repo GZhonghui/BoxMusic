@@ -1,6 +1,7 @@
 Cache/
 manifest.txt
 token.txt
+cache.txt
 .DS_Store
 
 # Byte-compiled / optimized / DLL files

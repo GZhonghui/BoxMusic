@@ -1,20 +1,25 @@
 import vlc, os
+import message as m
 
 class AudioPlayer:
     def __init__(self):
         self.player = vlc.MediaPlayer()
         self.current_file = None
+        self.on_play_end_func = None
+        self.event_manager = self.player.event_manager()
+        self.event_manager.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_end_reached)
 
     def play(self, file_path):
         if not os.path.exists(file_path):
             return
 
         if self.current_file != file_path:
-            self.stop()
+            if self.current_file: self.stop()
             self.current_file = file_path
             media = vlc.Media(file_path)
             self.player.set_media(media)
 
+        m.out(f'Player: start playing {file_path}')
         self.player.play()
 
     def pause(self):
@@ -39,6 +44,11 @@ class AudioPlayer:
         total_length = self.player.get_length()  # ms
 
         return [current_time, total_length]
+    
+    def _on_end_reached(self, event):
+        last_path = self.current_file
+        self.current_file = None
+        if self.on_play_end_func: self.on_play_end_func(last_path)
 
 if __name__ == '__main__':
     pass

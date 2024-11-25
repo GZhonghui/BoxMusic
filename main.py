@@ -4,9 +4,13 @@ import dropbox, vlc, os, time, subprocess
 import message as m
 import player as p
 
+dbx = None
+
 music_format = ['mp3', 'flac', 'm4a']
 manifest = list()
 playlist = list()
+
+playmode = 1 # 1: default, 2: repeat, 3: shuffle
 
 audio_player = p.AudioPlayer()
 
@@ -69,8 +73,33 @@ def play_song(dbx, path: str):
     m.out('Download completed')
     audio_player.play(cache_path)
 
+# callback
+def on_play_end(end_file_path):
+    global dbx, playmode, playlist
+    if end_file_path: end_file_path = end_file_path[7:] # ./Cache
+    m.out(f'[{end_file_path}] end')
+    if len(playlist) == 0:
+        m.out('Playlist is empty!')
+        return
+    if not end_file_path or end_file_path not in playlist:
+        m.out('Play from the start of playlist')
+        play_song(dbx, playlist[0])
+        return
+    idx = playlist.index(end_file_path) + 1
+    if playmode == 1:
+        if idx < len(playlist):
+            m.out(f'Playing the next song (mode 1)... [{playlist[idx]}]')
+            play_song(dbx, playlist[idx])
+        else: m.out('Playlist end')
+    elif playmode == 2:
+        next_song = playlist[idx if idx < len(playlist) else 0]
+        m.out(f'Playing the next song (mode 2)... [{next_song}]')
+        play_song(dbx, next_song)
+
+audio_player.on_play_end_func = on_play_end
+
 def main():
-    global playlist, need_help
+    global playlist, need_help, dbx, playmode
     tokens = ['', '']
     with open('token.txt', 'r', encoding='utf-8') as file:
         tokens[0] = file.read()
@@ -156,10 +185,14 @@ def main():
             status = f'{"Playing" if audio_player.is_playing() else "Paused"}: '
             status = status + f'[{audio_player.current_file if audio_player.current_file else "NULL"}]; '
             current_time, total_length = audio_player.get_progress()
-            status = status + f'({current_time//1000}s / {total_length//1000}s)'
+            status = status + f'({current_time//1000}s / {total_length//1000}s); '
+            status = status + f'playmode = {playmode}'
             m.out(status)
         elif i.startswith('H'):
             need_help = True
+        elif i.startswith('M') and ' ' in i and i.split(' ')[1] in ['1','2','3']:
+            playmode = int(i.split(' ')[1])
+            m.out(f'Changed playmode to {playmode}')
         else: m.out('Unexpected input!')
     m.out('Bye~')
 

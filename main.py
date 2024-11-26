@@ -223,6 +223,9 @@ def main():
         elif i.startswith('M') and ' ' in i and i.split(' ')[1] in ['1','2','3']:
             playmode = int(i.split(' ')[1])
             m.out(f'Changed playmode to {playmode}')
+        elif i.startswith('N'):
+            m.out('Jumping to next file...')
+            audio_player.seek_to_last_second()
         else: m.out('Unexpected input!')
     m.out('Stopping manager threads...')
     audio_manager.stop()

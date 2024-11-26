@@ -45,6 +45,12 @@ class AudioPlayer:
 
         return [current_time, total_length]
     
+    def seek_to_last_second(self):
+        if not self.is_playing(): return
+        total_length = self.player.get_length()  # ms
+        if total_length > 1000:
+            self.player.set_time(total_length - 1000)
+    
     def _on_end_reached(self, event):
         last_path = self.current_file
         self.current_file = None

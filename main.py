@@ -1,6 +1,6 @@
 # make sure the vlc is installed
 # https://www.videolan.org/
-import dropbox, vlc, os, time, subprocess, threading, manager
+import dropbox, vlc, os, time, random, subprocess, threading, manager
 import message as m
 import player as p
 
@@ -103,6 +103,10 @@ def on_play_end(end_file_path):
         m.out(f'Playing the next song (mode 2)... [{next_song}]')
         with next_song_path_lock:
             next_song_path = next_song
+    elif playmode == 3:
+        with next_song_path_lock:
+            next_song_path = random.choice(playlist)
+            m.out(f'Random play: [{next_song_path}]')
 
 audio_player.on_play_end_func = on_play_end
 

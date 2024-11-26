@@ -1,6 +1,6 @@
 # make sure the vlc is installed
 # https://www.videolan.org/
-import dropbox, vlc, os, time, subprocess
+import dropbox, vlc, os, time, subprocess, threading, manager
 import message as m
 import player as p
 
@@ -12,7 +12,21 @@ playlist = list()
 
 playmode = 1 # 1: default, 2: repeat, 3: shuffle
 
+next_song_path = str()
+next_song_path_lock = threading.Lock()
+
 audio_player = p.AudioPlayer()
+audio_manager = manager.WorkerThread()
+
+need_help = True
+def print_menu(detail = False):
+    if detail:
+        menu = '[P (id)] Play or Pause, [N] Next file, [S] Current status, '
+        menu = menu + '[D] Delete from playlist, [I] Insert to playlist, '
+        menu = menu + '[M id] Play mode (1: default, 2: repeat, 3: shuffle), [Q] Quit.'
+        m.out(menu)
+    else:
+        m.out('Welcome! Please input your command, [H] for more help.')
 
 def download(dbx, file_path: str):
     try:
@@ -40,6 +54,7 @@ def sync_music(dbx, music_path: list):
     cache_path = f'./Cache{full_path}'
     m.out(f'Download from [{full_path}] to [{cache_path}]')
     if os.path.exists(cache_path) and os.path.isfile(cache_path):
+        m.out(f'[{cache_path}] is alerady cached')
         return cache_path
 
     data = download(dbx, full_path)
@@ -53,16 +68,6 @@ def sync_music(dbx, music_path: list):
 def playlist_updated():
     m.out('playlist updated')
 
-need_help = True
-def print_menu(detail = False):
-    if detail:
-        menu = '[P (id)] Play or Pause, [N] Next file, [S] Current status, '
-        menu = menu + '[D] Delete from playlist, [I] Insert to playlist, '
-        menu = menu + '[M id] Play mode (1: default, 2: repeat, 3: shuffle), [Q] Quit.'
-        m.out(menu)
-    else:
-        m.out('Welcome! Please input your command, [H] for more help.')
-
 def play_song(dbx, path: str):
     m.out('Downloading file...')
     cache_path = sync_music(dbx, path.strip('/').split('/'))
@@ -75,7 +80,7 @@ def play_song(dbx, path: str):
 
 # callback
 def on_play_end(end_file_path):
-    global dbx, playmode, playlist
+    global dbx, playmode, playlist, next_song_path, next_song_path_lock
     if end_file_path: end_file_path = end_file_path[7:] # ./Cache
     m.out(f'[{end_file_path}] end')
     if len(playlist) == 0:
@@ -83,23 +88,41 @@ def on_play_end(end_file_path):
         return
     if not end_file_path or end_file_path not in playlist:
         m.out('Play from the start of playlist')
-        play_song(dbx, playlist[0])
+        with next_song_path_lock:
+            next_song_path = playlist[0]
         return
     idx = playlist.index(end_file_path) + 1
     if playmode == 1:
         if idx < len(playlist):
             m.out(f'Playing the next song (mode 1)... [{playlist[idx]}]')
-            play_song(dbx, playlist[idx])
+            with next_song_path_lock:
+                next_song_path = playlist[idx]
         else: m.out('Playlist end')
     elif playmode == 2:
         next_song = playlist[idx if idx < len(playlist) else 0]
         m.out(f'Playing the next song (mode 2)... [{next_song}]')
-        play_song(dbx, next_song)
+        with next_song_path_lock:
+            next_song_path = next_song
 
 audio_player.on_play_end_func = on_play_end
 
+def manager_loop_func():
+    global next_song_path, next_song_path_lock, dbx
+    readed_path = None
+
+    with next_song_path_lock:
+        readed_path = next_song_path
+        next_song_path = str()
+
+    if not readed_path or len(readed_path) == 0: return
+    m.out(f'Manager: start playing [{readed_path}]')
+    play_song(dbx, readed_path)
+
+audio_manager.loop_func = manager_loop_func
+
 def main():
-    global playlist, need_help, dbx, playmode
+    global playlist, need_help, dbx, playmode, audio_manager
+
     tokens = ['', '']
     with open('token.txt', 'r', encoding='utf-8') as file:
         tokens[0] = file.read()
@@ -117,6 +140,7 @@ def main():
     sync_manifest(dbx)
     m.out('Music Library manifest info synced completed')
 
+    audio_manager.start()
     while True:
         print_menu(need_help)
         need_help = False
@@ -134,7 +158,9 @@ def main():
                     audio_player.resume()
                 elif id >= 1 and id <= len(playlist):
                     m.out(f'Start play: id = {id}, name = [{playlist[id-1]}]')
-                    play_song(dbx, playlist[id-1])
+                    global next_song_path, next_song_path_lock
+                    with next_song_path_lock:
+                        next_song_path = playlist[id-1]
                 else: m.out('Id out of range!')
             else: m.out('No avaliable id!')
         elif i.startswith('I'):
@@ -194,6 +220,9 @@ def main():
             playmode = int(i.split(' ')[1])
             m.out(f'Changed playmode to {playmode}')
         else: m.out('Unexpected input!')
+    m.out('Stopping manager threads...')
+    audio_manager.stop()
+    audio_manager.join()
     m.out('Bye~')
 
 if __name__ == '__main__':

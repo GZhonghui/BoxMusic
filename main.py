@@ -52,7 +52,7 @@ def sync_music(dbx, music_path: list):
     full_path = ''
     for sub in music_path: full_path += f'/{sub}'
     cache_path = f'./Cache{full_path}'
-    m.out(f'Download from [{full_path}] to [{cache_path}]')
+    m.out(f'Download from [{full_path}]')
     if os.path.exists(cache_path) and os.path.isfile(cache_path):
         m.out(f'[{cache_path}] is alerady cached')
         return cache_path

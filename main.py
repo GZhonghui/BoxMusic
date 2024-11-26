@@ -124,16 +124,23 @@ def manager_loop_func():
 
 audio_manager.loop_func = manager_loop_func
 
+def parse_token(file_content: str):
+    if file_content and len(file_content) > 0 and file_content.startswith('{'):
+        data = file_content.split('"')
+        if 'access_token' in data:
+            return data[data.index('access_token') + 2]
+    return file_content
+
 def main():
     global playlist, need_help, dbx, playmode, audio_manager
 
     tokens = ['', '']
     with open('token.txt', 'r', encoding='utf-8') as file:
-        tokens[0] = file.read()
+        tokens[0] = parse_token(file.read())
     token_dn_path = os.path.expanduser('~/Downloads/token.txt')
     if os.path.exists(token_dn_path) and os.path.isfile(token_dn_path):
         with open(token_dn_path, 'r', encoding='utf-8') as file:
-            tokens[1] = file.read()
+            tokens[1] = parse_token(file.read())
     token = tokens[0] if len(tokens[0]) > len(tokens[1]) else tokens[1]
     if token == '' or token == 'YOUR_ACCESS_TOKEN':
         m.out('There is no avaliable token!')

@@ -5,7 +5,8 @@ import os
 
 video_filter = ['mp4', 'mkv']
 
-video_dir = r'C:\Users\Admin\Desktop' # PASTE HERE
+video_dir = r'C:\Users\Admin\Dropbox\Apps\ZhonghuiPlayer\视频\Video' # PASTE HERE
+compare_dir = r'C:\Users\Admin\Dropbox\Apps\ZhonghuiPlayer\视频\Audio' # PASTE HERE
 output_dir = os.path.join(os.path.expanduser('~'), 'Desktop', 'Output') # also works on Windows
 
 def extract_audio(video_file_path, audio_file_path):
@@ -24,8 +25,12 @@ def main():
             if file_name.split('.')[-1] not in video_filter: continue
             source_path = os.path.join(root, file_name)
             target_path = output_dir + source_path[pre_l:-3] + 'mp3'
-            print(f'[{source_path}] -> [{target_path}]')
-            extract_audio(source_path, target_path)
+            compare_path = compare_dir + source_path[pre_l:-3] + 'mp3'
+            if os.path.exists(compare_path) and os.path.isfile(compare_path):
+                print(f'[{compare_path}] exists, skip...')
+            else:
+                print(f'Convert: [{source_path}] -> [{target_path}]')
+                extract_audio(source_path, target_path)
 
 if __name__ == '__main__':
     main()

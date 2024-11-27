@@ -1,6 +1,8 @@
 # pip install moviepy
 
-from moviepy import VideoFileClip
+# from moviepy import VideoFileClip # Windows py39+
+from moviepy.editor import VideoFileClip # Mac py38
+
 import os
 
 video_filter = ['mp4', 'mkv']
@@ -16,7 +18,16 @@ def extract_audio(video_file_path, audio_file_path):
     audio.write_audiofile(audio_file_path)
     video.close()
 
-def main():
+def convert_full_dir(dir_path: str):
+    files = [file for file in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, file)) and file.split('.')[-1] in video_filter]
+    for file in files:
+        target_file_name = file[:-3] + 'mp3'
+        source_path = os.path.join(dir_path, file)
+        target_path = os.path.join(dir_path, target_file_name)
+        print(f'[{source_path}] -> [{target_path}]')
+        extract_audio(source_path, target_path)
+
+def convert_video_dir():
     print(f'[{video_dir}] -> [{output_dir}]')
 
     pre_l = len(video_dir)
@@ -31,6 +42,11 @@ def main():
             else:
                 print(f'Convert: [{source_path}] -> [{target_path}]')
                 extract_audio(source_path, target_path)
+
+def main():
+    # convert_video_dir() # run on windows
+    # convert_full_dir('/Users/anny/Dropbox/Apps/ZhonghuiPlayer/原声/漫长的季节/配乐专辑')
+    pass
 
 if __name__ == '__main__':
     main()

@@ -28,6 +28,24 @@ def print_menu(detail = False):
     else:
         m.out('Welcome! Please input your command, [H] for more help.')
 
+def save_playlist(save_file_path = './playlist.txt'):
+    global playlist
+
+    with open(save_file_path, 'w', encoding='utf-8') as file:
+        for item in playlist:
+            file.write(f'{item}\n')
+    m.out(f'Playlist saved to {save_file_path}')
+
+def load_playlist(load_file_path = './playlist.txt'):
+    if not os.path.exists(load_file_path) or not os.path.isfile(load_file_path):
+        return
+    
+    global playlist, manifest
+    with open(load_file_path, 'r', encoding='utf-8') as file:
+        playlist = file.readlines()
+    playlist = [item.strip() for item in playlist if f'F{item.strip()}' in manifest]
+    m.out(f'{len(playlist)} songs readed from {load_file_path}')
+
 def download(dbx, file_path: str):
     try:
         md, res = dbx.files_download(file_path)
@@ -150,6 +168,7 @@ def main():
     m.out('You are already signed in dropbox')
     sync_manifest(dbx)
     m.out('Music Library manifest info synced completed')
+    load_playlist()
 
     audio_manager.start()
     while True:
@@ -234,6 +253,8 @@ def main():
             m.out('Jumping to next file...')
             audio_player.seek_to_last_second()
         else: m.out('Unexpected input!')
+
+    save_playlist()
     m.out('Stopping manager threads...')
     audio_manager.stop()
     audio_manager.join()

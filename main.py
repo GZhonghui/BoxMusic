@@ -85,6 +85,7 @@ def sync_music(dbx, music_path: list):
 
 def playlist_updated():
     m.out('playlist updated')
+    save_playlist()
 
 def play_song(dbx, path: str):
     m.out('Downloading file...')
@@ -137,7 +138,7 @@ def manager_loop_func():
         next_song_path = str()
 
     if not readed_path or len(readed_path) == 0: return
-    m.out(f'Manager: start playing [{readed_path}]')
+    m.out(f'Manager: start playing [{readed_path}] ({playlist.index(readed_path) + 1} / {len(playlist)})')
     play_song(dbx, readed_path)
 
 audio_manager.loop_func = manager_loop_func

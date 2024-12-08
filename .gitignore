@@ -4,6 +4,7 @@ manifest.txt
 manifest_v.txt
 token.txt
 cache.txt
+playlist.txt
 .DS_Store
 
 # Byte-compiled / optimized / DLL files

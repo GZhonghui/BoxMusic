@@ -7,7 +7,9 @@ import player as p
 dbx = None
 
 music_format = ['mp3', 'flac', 'm4a']
+video_format = ['mp4', 'mkv']
 manifest = list()
+manifest_v = list()
 playlist = list()
 
 playmode = 1 # 1: default, 2: repeat, 3: shuffle
@@ -56,15 +58,20 @@ def download(dbx, file_path: str):
 
 # generate manifest.txt: tree . > manifest.txt @ Apps/ZhonghuiPlayer/
 def sync_manifest(dbx):
-    manifest_path = '/manifest.txt'
-    with open('./manifest.txt', 'wb') as file:
-        data = download(dbx, manifest_path)
-        if data: file.write(data)
-
-    global manifest
-    with open('./manifest.txt', 'r', encoding='utf-8') as file:
-        manifest = file.readlines()
-    manifest = [line.strip() for line in manifest]
+    def sync_with_filename(filename: str):
+        manifest_path = f'/{filename}'
+        with open(f'./{filename}', 'wb') as file:
+            data = download(dbx, manifest_path)
+            if data: file.write(data)
+        data_place = list()
+        with open(f'./{filename}', 'r', encoding='utf-8') as file:
+            data_place = file.readlines()
+        data_place = [line.strip() for line in data_place]
+        return data_place
+    
+    global manifest, manifest_v
+    manifest = sync_with_filename('manifest.txt')
+    manifest_v = sync_with_filename('manifest_v.txt')
 
 def sync_music(dbx, music_path: list):
     full_path = ''
@@ -253,6 +260,38 @@ def main():
         elif i.startswith('N'):
             m.out('Jumping to next file...')
             audio_player.seek_to_last_second()
+        elif i.startswith('V'):
+            if i == 'V':
+                with open('./cache.txt', 'w', encoding='utf-8') as file:
+                    for l in manifest_v: file.write(f'*{l}\n')
+                try:
+                    subprocess.run(["vim", "./cache.txt"], check=True)
+                except subprocess.CalledProcessError as e:
+                    m.out('No update to video lib')
+            elif ' ' in i and i.split(' ')[1].isdigit():
+                id = int(i.split(' ')[1])
+                if id >= 1 and id <= len(manifest_v):
+                    server_path = manifest_v[id - 1]
+                    if server_path.startswith('F') and len(server_path) > 3 and server_path[-3:] in video_format:
+                        server_path = server_path[1:]
+                        local_path = f'./CacheVideo{server_path}'
+                        m.out(f'Downloading video file: [{server_path}]')
+                        m.out(f'Local path = [{local_path}]')
+                        if os.path.exists(local_path) and os.path.isfile(local_path):
+                            m.out(f'[{local_path}] is already cached!')
+                        else:
+                            data = download(dbx, server_path)
+                            if data is None:
+                                m.out(f'[{server_path}] download failed')
+                            else:
+                                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                                with open(local_path, 'wb') as file:
+                                    file.write(data)
+                                m.out(f'[{server_path}] download complated')
+                    else:
+                        m.out(f'[{server_path}] is not a video file')
+                else: m.out('Video id out of range!')
+            else: m.out('No avaliable video id!')
         else: m.out('Unexpected input!')
 
     save_playlist()

@@ -49,6 +49,13 @@ function selectSong(file) {
 function songTitle(file) {
   return file.title || file.name
 }
+
+// 歌手：index.json 里是列表（0 到多个），多人用 / 连接显示。
+// 兼容旧索引里 artist 仍是字符串的情况。
+function artistText(file) {
+  const a = file.artist
+  return Array.isArray(a) ? a.join(' / ') : a || ''
+}
 </script>
 
 <template>
@@ -94,7 +101,7 @@ function songTitle(file) {
       >
         <span class="icon">🎵</span>
         <span class="title">{{ songTitle(item.file) }}</span>
-        <span v-if="item.file.artist" class="artist">{{ item.file.artist }}</span>
+        <span v-if="artistText(item.file)" class="artist">{{ artistText(item.file) }}</span>
       </div>
     </RecycleScroller>
 

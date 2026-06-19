@@ -36,14 +36,22 @@ ROOT_LABEL = 'Music'                     # 面包屑根节点显示名
 
 # ——— 实现 ———
 
+def split_artists(s):
+    """歌手字段按英文逗号分割成列表，去空白、去空项。
+    解析不出歌手时返回空列表（长度 0 到任意）。"""
+    return [a.strip() for a in s.split(',') if a.strip()]
+
+
 def parse_name(stem, reversed_order=False):
     """从文件名（不含扩展名）解析 artist / title。
     默认约定 '歌手 - 歌名'；reversed_order=True 时为 '歌名 - 歌手'（见 REVERSED_ORDER_DIRS）。
-    没有 ' - ' 分隔时 artist 留空、整名当 title。"""
+    没有 ' - ' 分隔时 artist 为空列表、整名当 title。
+    返回 (artists, title)，artists 是列表（按英文逗号可拆成多人）。"""
     if ' - ' in stem:
         left, right = (s.strip() for s in stem.split(' - ', 1))
-        return (right, left) if reversed_order else (left, right)
-    return '', stem.strip()
+        artist_str, title = (right, left) if reversed_order else (left, right)
+        return split_artists(artist_str), title
+    return [], stem.strip()
 
 
 def is_reversed_order(app_path):
@@ -71,11 +79,11 @@ def scan_files():
                 continue
 
             path = to_app_path(os.path.join(root, name))
-            artist, title = parse_name(stem, reversed_order=is_reversed_order(path))
+            artists, title = parse_name(stem, reversed_order=is_reversed_order(path))
             entry = {
                 'path': path,
                 'name': name,
-                'artist': artist,
+                'artist': artists,  # 列表：0 到多个歌手（按英文逗号分割）
                 'title': title,
             }
 

@@ -22,6 +22,35 @@ export async function fetchWithAuth(url, options = {}) {
   return res
 }
 
+const DOWNLOAD_URL = 'https://content.dropboxapi.com/2/files/download'
+
+// Dropbox-API-Arg 头只能是 ASCII：把非 ASCII 字符（如中文路径）转成 \uXXXX 转义，
+// 否则带中文路径的请求会因 HTTP 头含非法字符而失败。Dropbox 会把转义还原。
+function apiArg(obj) {
+  return JSON.stringify(obj).replace(/[\u007f-\uffff]/g, (c) =>
+    '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'),
+  )
+}
+
+// 下载某个文本文件（如 .lrc 歌词）的内容，按 UTF-8 解码返回。
+// 文件不存在 → 抛出带 code='not_found' 的错误，调用方可据此当「无内容」处理。
+export async function downloadText(path) {
+  const res = await fetchWithAuth(DOWNLOAD_URL, {
+    method: 'POST',
+    headers: { 'Dropbox-API-Arg': apiArg({ path }) },
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    if (res.status === 409 && detail.includes('not_found')) {
+      const e = new Error('not_found')
+      e.code = 'not_found'
+      throw e
+    }
+    throw new Error(`下载失败 (HTTP ${res.status})${detail ? `：${detail}` : ''}`)
+  }
+  return res.text()
+}
+
 const TEMP_LINK_URL = 'https://api.dropboxapi.com/2/files/get_temporary_link'
 
 // 取某个文件 4 小时有效的临时直链（音频流式播放、封面图都用它）。失败抛错。

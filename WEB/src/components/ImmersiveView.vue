@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useLibraryStore } from '../stores/library'
 import { usePlayerStore } from '../stores/player'
 import { trackTitle, artistText } from '../lib/display'
+import LyricsView from './LyricsView.vue'
 
 const library = useLibraryStore()
 const player = usePlayerStore()
@@ -57,9 +58,9 @@ const bgStyle = computed(() =>
           </div>
         </div>
 
-        <!-- 歌词视图（第 8 步实现，先占位） -->
+        <!-- 歌词视图：跟随播放进度逐行高亮、平滑滚动居中 -->
         <div v-else key="lyrics" class="pane lyrics">
-          <p class="hint">歌词功能即将推出</p>
+          <LyricsView />
         </div>
       </transition>
     </div>
@@ -196,8 +197,10 @@ const bgStyle = computed(() =>
   color: var(--fg-muted);
 }
 
-.lyrics .hint {
-  color: var(--fg-muted);
+/* 歌词页铺满整块、不居中（内部自行滚动） */
+.pane.lyrics {
+  justify-content: stretch;
+  gap: 0;
 }
 
 .fade-enter-active,

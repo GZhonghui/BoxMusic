@@ -314,8 +314,9 @@
 > **当前进度**（截至 2026-06-19）
 > - [x] **第 1 步：登录 + token 刷新** —— 已完成并验证（commit `e0a4fbe`）
 > - [x] **本地索引生成脚本** —— `scripts/build_index.py` 已就绪并实跑生成 `index.json`（第 2 步的前置）
-> - [ ] 第 2 步：下载并解析 `/metainfo/index.json` ← 下一步（Web 端读取）
-> - [ ] 第 3~8 步：未开始
+> - [x] **第 2 步：下载并解析 `/metainfo/index.json`** —— 已完成并验证（实测加载 5242 首）
+> - [ ] 第 3 步：文件夹浏览器 + 面包屑导航 ← 下一步
+> - [ ] 第 4~8 步：未开始
 
 ### 1. 登录 + token 刷新机制（确保 API 能调通）✅ 已完成
 实现说明：
@@ -330,16 +331,17 @@ TODO 验证：
 - ✅ 粘贴无效凭证 → 报错并带 Dropbox 原文
 - ✅ token 过期 → 下次调用自动刷新（提前 5 分钟）；401 回登录页
 
-### 2. 下载并解析 `/metainfo/index.json`（核心数据有了）
+### 2. 下载并解析 `/metainfo/index.json`（核心数据有了）✅ 已完成
 > 前置已完成：本地索引脚本 `scripts/build_index.py`（沿用 CLI/update_manifest.py 思路）。
 > 扫描本机已同步的 App folder，生成 `metainfo/index.json` 由 Dropbox 客户端同步上传；
 > 字段、`settings`、`path` 唯一标识、按 path 排序保证 rev 稳定，均按本节 schema 实现。
-TODO：
-- `loadIndex()`：`/files/download` 拉 `/metainfo/index.json`，`JSON.parse`
-- 解析进 Pinia：`files[]` + `settings`
-- 文件不存在 / 解析失败 → 显示对应提示（引导跑本地脚本 / 索引损坏）
+实现说明：
+- `src/stores/library.js`：Pinia store，`loadIndex()` 走 content 域 `/files/download` 拉 `/metainfo/index.json`（参数放 `Dropbox-API-Arg` 头），`JSON.parse` 进 `files[]` + `settings`。
+- 失败只落到 `status`/`error`，不抛错不白屏：409 + `not_found` → 「索引尚未生成」；JSON 解析失败 / 缺 `files` 列表 → 「索引损坏」；其它 → 带 HTTP 原文。
+- `src/App.vue`：占位页加「加载索引」按钮显示结果，仅为本步验证（第 3 步会被真正骨架替换）。
+- 暂不做 rev 比对 / `index_cache` 秒开缓存（属后续步骤，本步从简）。
 TODO 验证：
-- ✅ 有索引 → 控制台能打出曲目总数，与脚本生成的一致
+- ✅ 有索引 → 控制台打出曲目总数（实测 5242 首，与脚本一致）
 - ✅ 删掉/改名远端文件 → 出现「索引尚未生成」提示，不白屏
 - ✅ 故意上传一个坏 JSON → 有「索引损坏」提示，不崩
 

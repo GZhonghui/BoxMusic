@@ -1,10 +1,12 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useAuthStore } from './stores/auth'
+import { useLibraryStore } from './stores/library'
 import { fetchWithAuth } from './dropbox/api'
 import LoginView from './components/LoginView.vue'
 
 const auth = useAuthStore()
+const library = useLibraryStore()
 
 // —— 临时占位：仅用于验证第 1 步「登录 + token 刷新机制」（确保 API 能调通）。
 //    后续第 3 步会用真正的应用骨架替换整块已登录视图。
@@ -48,10 +50,21 @@ async function testConnection() {
       <button @click="testConnection" :disabled="testState === 'loading'">
         {{ testState === 'loading' ? '测试中…' : '测试连接' }}
       </button>
+      <button @click="library.loadIndex()" :disabled="library.status === 'loading'">
+        {{ library.status === 'loading' ? '加载索引中…' : '加载索引' }}
+      </button>
       <button class="ghost" @click="auth.logout()">退出登录</button>
     </div>
 
     <p v-if="testMsg" :class="['result', testState]">{{ testMsg }}</p>
+
+    <p
+      v-if="library.status !== 'idle' && library.status !== 'loading'"
+      :class="['result', library.status === 'ready' ? 'ok' : 'error']"
+    >
+      <template v-if="library.status === 'ready'">索引加载成功，共 {{ library.files.length }} 首</template>
+      <template v-else>{{ library.error }}</template>
+    </p>
   </div>
 </template>
 

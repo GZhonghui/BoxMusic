@@ -9,6 +9,7 @@
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 # ——— 配置（按需改这里）———
@@ -37,9 +38,9 @@ ROOT_LABEL = 'Music'                     # 面包屑根节点显示名
 # ——— 实现 ———
 
 def split_artists(s):
-    """歌手字段按英文逗号分割成列表，去空白、去空项。
-    解析不出歌手时返回空列表（长度 0 到任意）。"""
-    return [a.strip() for a in s.split(',') if a.strip()]
+    """歌手字段按英文逗号 , / 分号 ; / 和号 & 分割成列表，
+    每个歌手名去掉前后空格、去掉空项。解析不出歌手时返回空列表（长度 0 到任意）。"""
+    return [a.strip() for a in re.split(r'[,;&]', s) if a.strip()]
 
 
 def parse_name(stem, reversed_order=False):

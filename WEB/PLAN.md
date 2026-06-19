@@ -313,7 +313,8 @@
 
 > **当前进度**（截至 2026-06-19）
 > - [x] **第 1 步：登录 + token 刷新** —— 已完成并验证（commit `e0a4fbe`）
-> - [ ] 第 2 步：下载并解析 `/metainfo/index.json` ← 下一步
+> - [x] **本地索引生成脚本** —— `scripts/build_index.py` 已就绪并实跑生成 `index.json`（第 2 步的前置）
+> - [ ] 第 2 步：下载并解析 `/metainfo/index.json` ← 下一步（Web 端读取）
 > - [ ] 第 3~8 步：未开始
 
 ### 1. 登录 + token 刷新机制（确保 API 能调通）✅ 已完成
@@ -330,6 +331,9 @@ TODO 验证：
 - ✅ token 过期 → 下次调用自动刷新（提前 5 分钟）；401 回登录页
 
 ### 2. 下载并解析 `/metainfo/index.json`（核心数据有了）
+> 前置已完成：本地索引脚本 `scripts/build_index.py`（沿用 CLI/update_manifest.py 思路）。
+> 扫描本机已同步的 App folder，生成 `metainfo/index.json` 由 Dropbox 客户端同步上传；
+> 字段、`settings`、`path` 唯一标识、按 path 排序保证 rev 稳定，均按本节 schema 实现。
 TODO：
 - `loadIndex()`：`/files/download` 拉 `/metainfo/index.json`，`JSON.parse`
 - 解析进 Pinia：`files[]` + `settings`

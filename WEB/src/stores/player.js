@@ -205,16 +205,25 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 队列内拖拽换序，currentIndex 跟随当前曲（path 唯一）
+  // 队列内拖拽换序。currentIndex 按下标推算新位置——队列允许重复曲目
+  // （enqueue 不去重），不能靠 path 定位，否则高亮会贴到同名的另一实例上。
   function moveItem(from, to) {
     const len = queue.value.length
     if (from === to || from < 0 || to < 0 || from >= len || to >= len) return
-    const cur = currentTrack.value
+    const ci = currentIndex.value
     const arr = queue.value.slice()
     const [item] = arr.splice(from, 1)
     arr.splice(to, 0, item)
     queue.value = arr
-    if (cur) currentIndex.value = arr.findIndex((t) => t.path === cur.path)
+    if (ci < 0) return
+    if (ci === from) {
+      currentIndex.value = to // 拖动的就是当前曲，它落到 to
+    } else {
+      let i = ci
+      if (ci > from) i-- // 移除 from 后，其右侧整体左移一位
+      if (i >= to) i++   // 在 to 处插回后，该位置及右侧整体右移一位
+      currentIndex.value = i
+    }
   }
 
   function clear() {

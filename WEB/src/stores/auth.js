@@ -6,7 +6,7 @@ const LS_REFRESH = 'dbx_refresh_token'
 const LS_APPKEY = 'dbx_app_key'
 const LS_SECRET = 'dbx_app_secret'
 
-// Dropbox OAuth token 端点（PKCE 公共客户端，无 app_secret）
+// Dropbox OAuth token 端点（机密客户端：用 app_key + app_secret 刷新，见 PLAN.md 九）
 const TOKEN_URL = 'https://api.dropbox.com/oauth2/token'
 
 // access_token 默认 4 小时过期，提前 5 分钟刷新

@@ -1,0 +1,13 @@
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.dropbox.com https://api.dropboxapi.com https://content.dropboxapi.com https://*.dropboxusercontent.com; media-src https://*.dropboxusercontent.com; img-src 'self' data: blob: https://*.dropboxusercontent.com; frame-ancestors 'none'"
+        }
+      ]
+    }
+  ]
+}

@@ -1,87 +1,122 @@
-# Dropbox 音乐播放器 — 设计方案
+# Dropbox 音乐播放器 — 设计方案（精简版）
+
+> 设计原则：**只读、简单、好维护**。Web 应用对 Dropbox **永远只读**，不写入任何文件；不做扫描。索引由用户在本地用脚本扫描后，上传到 Dropbox 的固定位置 `/metainfo/index.json`。
+
+> 代码原则：功能不追求多，追求稳定安全，好维护（不要让我读你写的屎山代码），写代码之前想想是不是最简单最稳定最好维护的实现，不该写的代码就不要写。追求从简
 
 ## 一、整体架构
 
-**纯前端 SPA**，无后端。所有逻辑跑在浏览器里。
+**纯前端 SPA**，无后端。所有逻辑跑在浏览器里，且**对 Dropbox 只读**。
 
 ```
 浏览器 (Vue 应用)
-  ├─ Dropbox API (OAuth token / files / download)
+  ├─ Dropbox API (OAuth token / files.download / get_temporary_link)   ← 只读
   ├─ localStorage (refresh_token、index 缓存、用户偏好)
   └─ <audio> 元素 (流式播放)
+
+本地脚本（不在本仓库范围）
+  └─ 扫描音乐目录 → 生成 index.json → 上传到 Dropbox 的 /metainfo/index.json
 ```
 
 数据流：
 - **凭证**：用户输入 refresh_token → 存 localStorage → 每次启动用它换 access_token（短时，存内存）
-- **元数据**：Dropbox 上一份 `index.json` 为权威源，本地 localStorage 镜像一份做秒开
+- **元数据**：Dropbox 上的 `/metainfo/index.json` 为权威源（由本地脚本维护），本地 localStorage 镜像一份做秒开
 - **音频**：临时直链流式播放，不下载到本地
+
+> ⚠️ Web 应用**不会**写 Dropbox、**不会**扫描文件夹。索引的生成与更新完全由本地脚本负责。
 
 ---
 
 ## 二、页面 UI 设计
 
-只用一个单页，按区域划分。建议布局（桌面优先，可响应式到手机）：
+只用一个单页，按区域划分。核心思路：**左侧是一栏带 Tab 切换的列表（文件夹浏览 / 播放队列，一次只显示一个），可折叠、有最小宽度；右侧是大面积的「沉浸区」——展示封面或歌词，吃掉剩余空间、内容自适应居中。** 建议布局（桌面优先，可响应式到手机）：
 
 ```
-┌─────────────────────────────────────────────────────┐
-│ 顶部栏                                                │
-│  Logo · 搜索框 ──────────────  状态指示 · 设置按钮     │
-├──────────────┬──────────────────────────────────────┤
-│              │                                      │
-│  左侧边栏     │   主内容区                            │
-│              │                                      │
-│  · 全部歌曲   │   [歌曲列表 / 当前歌手详情 / 设置面板]   │
-│  · 按歌手     │                                      │
-│  · 播放队列   │   表格列：序号 · 歌名 · 歌手 · 时长 · 操作│
-│  · 收藏夹     │                                      │
-│              │                                      │
-├──────────────┴──────────────────────────────────────┤
-│ 底部播放器（固定）                                     │
-│  封面占位 · 歌名/歌手 · ◁ ▷▷ ▷ · 进度条 · 时长 · 音量 · 模式│
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ 顶部栏                                                        │
+│  Logo · 搜索框 ──────────────────────  状态指示 · 设置按钮      │
+├──────────────────────┬──────────────────────────────────────┤
+│ ‹ [浏览 | 队列]       │  右侧 — 沉浸区（吃掉剩余空间）         │
+│  ┌ 面包屑 ──────────┐ │                                      │
+│  │ Music/华语/周杰伦 │ │          ╭───────────────────╮        │
+│  └────────────────┘ │          │                   │        │
+│  📁 2000 七里香       │          │    封面图（大）     │        │
+│  📁 2004 叶惠美       │          │  圆角+阴影+玻璃感   │        │
+│  🎵 晴天        ▶    │          │                   │        │
+│  🎵 稻香             │          ╰───────────────────╯        │
+│  …（虚拟滚动）        │             歌名 · 歌手               │
+│  〔最小宽度 / 可折叠〕 │           [ 封面 | 歌词 ] 切换         │
+├──────────────────────┴──────────────────────────────────────┤
+│ 底部播放器（固定）                                            │
+│  小封面 · 歌名/歌手 · ◁ ▷▷ ▷ · 进度条 · 时长 · 音量 · 模式      │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+左侧栏有**最小宽度**（约 `280px`），可点顶部的 `‹` 按钮**折叠**起来（折叠后右侧沉浸区铺满整个宽度）；右侧不设固定比例，**flex 吃掉剩余空间**，封面卡片在其中按可用空间自适应缩放并**水平+垂直居中**。窄屏（手机）改为上下堆叠或用底部 Tab 切「列表 / 正在播放」。
 
 ### 关键 UI 元素
 
 **顶部栏**
-- 搜索框：实时过滤（按歌名/歌手），客户端搜索，无需请求
-- 状态指示：显示「已同步 · 12,345 首」「正在同步…」「未登录」
+- 搜索框：跨全部歌曲实时过滤（按歌名/歌手/路径），客户端搜索，无需请求
+  - 搜索是「看全部」的入口：平时按文件夹浏览，想找具体歌就搜——所以不需要再单独做一个一万首的平铺列表
+  - **结果直接在搜索框下方弹出一个浮层列表**（不开新页面、不用路由），随输入实时刷新；输入为空 / 失焦点空白处 / `Esc` 就收起
+  - 结果列表里双击播放（把搜索结果设为队列）、单击选中；结果多时虚拟滚动 + 截断显示「前 N 条」
+- 状态指示：显示「已加载 · 12,345 首」「正在加载索引…」「未登录」
 - 设置按钮：弹出设置面板
 
-**左侧边栏**
-- 全部歌曲（默认视图）
-- 按歌手分组（点开展开该歌手所有歌曲）
-- 播放队列（当前队列 + 历史）
-- 收藏夹（可选，存 localStorage）
+**左侧栏**（单栏 + Tab 切换，可折叠，最小宽度 ~`280px`）
+- 顶部一排 Tab：`浏览` · `队列`，**一次只显示一个**，旁边一个 `‹` 折叠按钮
+- **Tab：浏览**（文件夹式，核心交互，避免上万首平铺）
+  - 用 `index.json` 里每首歌的 `path` 在前端构建一棵目录树，按真实文件夹层级浏览
+  - 顶部 **面包屑**：显示当前路径（`Music / 华语 / 周杰伦`），可点任一级跳回
+  - 当前目录内容混排，文件夹在前、歌曲在后：
+    - `📁 文件夹`：单击进入下一层（面包屑加一级）
+    - `🎵 歌曲`：双击播放
+  - 只渲染「当前这一层」的条目，单层通常几十条，虚拟滚动作为兜底
+- **Tab：队列** — 当前播放队列，平铺列表，支持：
+  - 拖拽 / 删除单曲、点歌跳播
+  - 顶部「清空队列」按钮
+  - 高亮当前播放项
+- 单击歌曲 = 选中（右侧沉浸区随之更新）
 
-**主内容区 — 歌曲列表**
-- 虚拟滚动（一万行 DOM 卡，必须用 `vue-virtual-scroller` 类库）
-- 列：`#` · `歌名` · `歌手` · `时长`（可选）· `操作`（播放/加入队列/收藏）
-- 双击行 = 立即播放并把整个当前列表设为队列
-- 单击 = 选中
+**播放与队列的关系**（只有一个「当前播放队列」，不做收藏夹、不做手动建歌单）
+- 在某个文件夹里双击一首歌 → 把**该文件夹内（不递归）的所有歌曲**按显示顺序设为队列，并从双击那首开始播放
+- 在搜索结果里双击一首歌 → 把搜索结果设为队列，从该首开始
+- 队列是临时的、可手动编辑（增删/排序/清空），不持久化成命名歌单
+
+**右侧 — 沉浸区**（大面积视觉焦点，封面 / 歌词二选一）
+- 顶部一个分段切换：`封面` | `歌词`
+- **封面视图**：
+  - 居中的大封面卡片，**圆角 + 柔和投影（drop shadow）+ 玻璃拟态（frosted glass / backdrop-blur）**
+  - 背景：用封面图放大模糊后铺底，叠一层半透明渐变，营造氛围
+  - 封面统一用 `index.json` 的 `settings.default_cover`（无则占位渐变 + 歌名首字）；内嵌封面不提取
+  - 下方显示歌名 · 歌手
+- **歌词视图**：
+  - 若该曲在 `index.json` 里带 `lrc`，从 Dropbox 拉取并解析，逐行显示、当前行高亮、随播放进度滚动居中
+  - 没有歌词时给出「暂无歌词」占位
+- 切换在两个视图间做淡入淡出过渡
 
 **底部播放器**（始终可见）
-- 当前曲目信息
+- 当前曲目信息（小封面 + 歌名/歌手）
 - 控制：上一首 / 播放暂停 / 下一首
 - 进度条：可拖动 seek
 - 音量条
 - 播放模式：顺序 / 单曲循环 / 列表循环 / 随机
-- 桌面：还能加键盘快捷键（空格暂停、左右切歌）
 
 **首次进入 / 未登录态**
 - 全屏引导：「请粘贴你的 Dropbox refresh token」+ 输入框 + 帮助链接
 - 帮助文档说明：如何在 Dropbox 开发者后台拿到 token、PKCE 流程注意事项
 
-**首次同步**
-- 全屏进度：「正在建立音乐索引 1234 / ~10000」+ 旋转动画
-- 完成后自动进入主界面
+**索引加载**
+- 启动时下载 `/metainfo/index.json`，显示「正在加载索引…」短暂态即可（一次下载，不是扫描）
+- 如果 Dropbox 上不存在该文件 → 提示「索引尚未生成，请先在本地运行扫描脚本上传到 /metainfo/index.json」
 
 **设置面板**
-- Dropbox 文件夹路径（默认 `/`，可改成 `/Music`）
-- 重建索引按钮
+- 重新加载索引按钮（强制重新下载 `/metainfo/index.json`，忽略本地缓存）
 - 清除凭证按钮（退出登录）
-- 主题切换（深色/浅色）
 - 关于 / 版本号
+
+> 注：没有「文件夹路径」设置（索引位置固定），也没有「重建索引」按钮（扫描在本地脚本里做）。
 
 ---
 
@@ -89,57 +124,60 @@
 
 ### 必备
 1. **登录**：输入并保存 refresh_token
-2. **建立索引**：首次全量扫描，生成 index.json 存到 Dropbox
-3. **增量同步**：之后每次启动用 cursor 拉差量
-4. **歌曲列表展示**：虚拟滚动，按歌手/歌名排序切换
-5. **搜索过滤**：实时搜索歌名/歌手
-6. **播放**：流式播放，支持 seek
-7. **队列**：上一首/下一首、自动连播
-8. **播放模式**：顺序/单曲循环/列表循环/随机
-9. **设置**：路径、重建索引、退出登录
+2. **加载索引**：启动时从 `/metainfo/index.json` 下载，本地缓存做秒开
+3. **文件夹浏览**：用路径构建目录树，按层级进入，面包屑导航（替代上万首平铺列表）
+4. **搜索过滤**：跨全部歌曲实时搜索歌名/歌手/路径（找具体歌的入口）
+5. **播放**：流式播放，支持 seek
+6. **播放队列**：唯一的队列概念。双击文件夹内某首 = 把该文件夹（不递归）所有歌曲入队并从该首播；上一首/下一首、自动连播；可手动增删/排序/清空
+7. **播放模式**：顺序/单曲循环/列表循环/随机
+8. **设置**：重新加载索引、退出登录
 
 ### 加分项（按优先级）
-1. **按歌手分组视图**
-2. **收藏夹**（存 localStorage）
-3. **键盘快捷键**
-4. **Media Session API**：让锁屏 / 蓝牙耳机能控制播放
-5. **歌词显示**（如果 Dropbox 同目录有同名 .lrc 文件就一起拉）
-6. **深色模式**
-7. **多设备同步**：把收藏 / 播放历史也写进 Dropbox
+1. **歌词显示**（如果 Dropbox 同目录有同名 .lrc 文件就一起拉）
 
-### 不做（先砍掉）
+### 不做
+- **任何写入 Dropbox 的操作**（上传索引、删除文件等）
+- **在应用内扫描 / 重建索引**（交给本地脚本）
+- **增量同步 / cursor 机制**（索引整体替换即可）
+- **收藏夹**
+- **手动创建 / 命名歌单**（只保留一个临时播放队列）
 - ID3 标签解析
-- 在线音质转码
-- 上传 / 删除文件
-- 评论、社交
 
 ---
 
 ## 四、数据结构
 
-### Dropbox 上的 `index.json`
+### Dropbox 上的 `index.json`（固定路径 `/metainfo/index.json`）
+
+由本地扫描脚本生成并上传，Web 应用只读取。
 
 ```jsonc
 {
   "version": 1,
-  "cursor": "AAE_xxx",              // 用于增量同步
-  "scanned_at": "2026-06-18T10:00:00Z",
-  "root_path": "/Music",
+  "generated_at": "2026-06-18T10:00:00Z",   // 本地脚本生成时间
+  "settings": {                              // 全局设置（由本地脚本写入）
+    "default_cover": "/metainfo/default.jpg", // 歌曲没有专辑图时统一回退用这张
+    "root_label": "Music"                     // 可选：面包屑根节点显示名
+  },
   "files": [
     {
-      "id": "id:abcdef123",          // Dropbox 稳定文件 ID
-      "path": "/Music/周杰伦 - 晴天.mp3",
+      "path": "/Music/周杰伦 - 晴天.mp3",  // App folder 内的相对路径，作唯一标识
       "name": "周杰伦 - 晴天.mp3",
-      "size": 5234123,
-      "modified": "2024-03-12T...",
-      "artist": "周杰伦",             // 文件名解析得到
-      "title": "晴天"                 // 文件名解析得到
+      "artist": "周杰伦",             // 本地脚本解析得到
+      "title": "晴天",                // 本地脚本解析得到
+      "lrc": "/Music/周杰伦 - 晴天.lrc"    // 可选：同目录同名歌词文件路径
     }
   ]
 }
 ```
 
-存放位置：`/Apps/<你的App名>/index.json`，或就放在用户配置的音乐根目录里，比如 `/Music/.index.json`。
+- **App folder 路径**：应用用 `App folder` 权限，API 里的 `/` 就是 App 文件夹根目录（无需也不要写 `/Apps/<AppName>/` 前缀）。`/metainfo` 即 App 根下的 metainfo 目录；音乐、`metainfo/`、`default_cover` 都放在 App 文件夹内；索引固定 `/metainfo/index.json`，应用内不可配置。
+- **用 `path` 作唯一标识**：`get_temporary_link` / `download` 都支持按 path 调用。**不存 `id`**——本地扫的是 online-only 占位文件，文件系统里没有 Dropbox 的 `id`（那是 API 概念），拿不到。
+- **`settings`**：全局配置区，由本地脚本维护。目前放 `default_cover`（封面图）等；后续要加全局项都往这里塞，Web 应用只读。
+- **没有 `size`**：online-only 占位文件本地扫描读出的 size 是 0 不可靠，所以不存；应用也用不到。
+- **没有 `cover`**：封面只嵌在音频文件内部，不单独存图。Web 应用统一显示 `settings.default_cover`（无则占位渐变），不做内嵌封面提取。
+- 不再需要 `cursor`（应用不做增量同步）。
+- 文件名解析（artist / title）由本地脚本完成，Web 应用直接用现成字段。
 
 ### localStorage 键
 
@@ -148,9 +186,10 @@
 | `dbx_refresh_token` | refresh token |
 | `dbx_app_key` | app key（PKCE 流程，无 secret） |
 | `index_cache` | 本地 index.json 副本（用于秒开） |
-| `index_cache_etag` | 远端 index 的 rev/版本号，判断要不要重拉 |
-| `settings` | `{ root_path, theme, play_mode, volume }` |
-| `favorites` | 收藏的文件 ID 数组 |
+| `index_cache_rev` | 远端 index 的 rev/版本号，判断要不要重拉 |
+| `settings` | `{ play_mode, volume }` |
+
+> 注：`index_cache` 约 1–3MB（万级曲库），在 localStorage ~5MB 上限内没问题；若日后曲库涨到几万首接近上限，再换 IndexedDB。
 
 ### 内存状态（Pinia / ref）
 
@@ -173,50 +212,26 @@
 2. 用 refresh_token 换 access_token（POST /oauth2/token）
    ├─ 失败 → 清除 token，回到登录页，提示「凭证已过期」
    └─ 成功 → 进入第 3 步
-3. 检查 Dropbox 上有没有 index.json
-   ├─ 没有 → 触发「首次全量扫描」(流程 2)
-   └─ 有 → 下载 index.json → 进入第 4 步
-4. 同时做：
-   a. 用 index 渲染界面（用户已经能看到列表）
-   b. 后台跑「增量同步」(流程 3)
+3. 先用 localStorage 的 index_cache 渲染界面（秒开），同时后台校验/更新索引（流程 2）
+   ├─ 没有缓存 → 直接走流程 2 拉取
 ```
 
-### 流程 2：全量扫描
+### 流程 2：加载索引（只读）
 
 ```
-1. 显示进度全屏
-2. 调 /files/list_folder { path: root_path, recursive: true, limit: 2000 }
-3. 过滤出音频扩展名（.mp3 / .flac / .m4a / .wav / .ogg / .opus）
-4. 解析文件名：用正则 ^(.+?)\s*-\s*(.+)\.\w+$ 提取 artist 和 title
-   - 不匹配的：artist = "未知"，title = 整个文件名
-5. 如果 has_more === true，用 returned cursor 继续 /list_folder/continue
-6. 全部拿完后：
-   - 保存最后的 cursor
-   - 组装 index.json
-   - 用 /files/upload 写到 Dropbox（覆盖模式 mode = "overwrite"）
-7. 同时写入 localStorage 缓存
+1. 调 /files/get_metadata { path: "/metainfo/index.json" } 拿 rev
+   ├─ 文件不存在 → 提示「索引尚未生成，请先在本地运行脚本上传到 /metainfo/index.json」
+2. 比较 rev 与本地 index_cache_rev
+   ├─ 相同 → 用本地缓存，结束
+   └─ 不同或无缓存 → 进入第 3 步
+3. 调 /files/download { path: "/metainfo/index.json" } 下载
+4. 解析 JSON → 更新内存列表 → 刷新 UI
+5. 写入 localStorage：index_cache + index_cache_rev
 ```
 
-进度计算：Dropbox 不告诉你总数，所以进度条只能显示「已扫描 N 个」。可以用伪进度条（先增长 90% 然后等真实完成）。
+> 「重新加载索引」按钮 = 跳过 rev 比较，强制执行第 3 步。
 
-### 流程 3：增量同步
-
-```
-1. 拿本地 index 里的 cursor
-2. 调 /files/list_folder/continue { cursor }
-3. 返回的 entries 里：
-   - .tag === "file" → 新增或修改 → 更新 index.files
-   - .tag === "deleted" → 从 index.files 删除
-4. 如果 has_more 继续翻页
-5. 更新最终 cursor
-6. 如果有变化：
-   - 写回 Dropbox 上的 index.json
-   - 写本地缓存
-   - 通知 UI 刷新列表
-7. 如果 cursor 过期（API 报错）→ 降级到全量扫描
-```
-
-### 流程 4：播放
+### 流程 3：播放
 
 ```
 1. 用户双击歌曲（或队列中切歌）
@@ -229,7 +244,7 @@
 5. seek 是浏览器自己做的 Range 请求，Dropbox 直链支持，无需我们处理
 ```
 
-### 流程 5：access token 刷新
+### 流程 4：access token 刷新
 
 - access token 默认 4 小时过期
 - 每次 API 调用前检查 expires_at，提前 5 分钟刷新
@@ -243,12 +258,37 @@
 |---|---|---|
 | 框架 | Vue 3 + `<script setup>` | 指定 |
 | 构建 | Vite | 静态产物，部署到任何静态托管 |
-| 路由 | Vue Router | 视图切换 |
 | 状态 | Pinia | 比 vuex 简洁 |
 | 虚拟滚动 | `vue-virtual-scroller` | 一万行必须有 |
 | 样式 | Tailwind 或纯 CSS | 看偏好 |
 | HTTP | 原生 fetch | 无需 axios |
-| 图标 | lucide-vue | 轻量 |
+| 图标 | `lucide-vue-next`（Vue 3 版）或直接内联 SVG | 轻量；图标少可省掉依赖 |
+
+### 版本记录（截至 2026-06-19，本机环境 + 各包当时最新版）
+
+本机运行时：
+
+| 运行时 | 版本 |
+|---|---|
+| Node | v24.17.0（LTS: Krypton，nvm 默认） |
+| npm | 11.13.0 |
+| pnpm | 11.7.0 |
+
+> 已从非 LTS 的 23.10.0 切到 **Node 24 LTS**，满足 Vite 8 的 Node `20.19+` / `22.12+` 要求。
+
+依赖（锁版本，不带 `^`，提交 lockfile）：
+
+| 包 | 版本 |
+|---|---|
+| vue | 3.5.38 |
+| vite | 8.0.16 |
+| @vitejs/plugin-vue | 6.0.7 |
+| pinia | 3.0.4 |
+| vue-virtual-scroller | 3.0.4 |
+| tailwindcss | 4.3.1 |
+| lucide-vue-next | 待定（用前 `npm view lucide-vue-next version` 核对当前版） |
+
+> Tailwind 是 v4（配置方式与 v3 不同，用 CSS-first 配置，无 `tailwind.config.js` 也可）。若嫌重，纯 CSS 也够用。
 
 **部署**：构建产物全是静态文件，可部署到 GitHub Pages / Cloudflare Pages / Vercel / 本地 file:// 直接打开都行（注意 file:// 协议下某些浏览器对 fetch 有限制，建议起个本地静态服务器）。
 
@@ -256,162 +296,120 @@
 
 ## 七、容易踩的坑
 
-1. **Dropbox 速率限制**：免费账号有调用频率限制。全量扫描时如果命中 429，要按 `Retry-After` 退避。
+1. **Dropbox 速率限制**：免费账号有调用频率限制。命中 429 时按 `Retry-After` 退避（只读场景调用很少，基本不会撞到）。
 2. **token 失效**：refresh_token 也可能被用户主动撤销，每次启动要处理 401 → 回登录页。
-3. **文件名解析的边界情况**：
-   - `Artist - Song - Remix.mp3` → 用 **第一个** `-` 作分隔
-   - 没有 `-` → artist 设为「未知」
-   - 多个空格、全角破折号 `—`、`–` → 正则要兼容
+3. **索引不存在**：`/metainfo/index.json` 没生成时要给出清晰提示，引导用户去跑本地脚本，而不是报错卡死。
 4. **CORS**：Dropbox API 都支持 CORS，但临时链接的域名是 `dl.dropboxusercontent.com`，浏览器播放时不需要 CORS 头（`<audio>` 不受 CORS 限制），但如果想画波形图就要了。
-5. **index.json 上传冲突**：多设备同时改 index 会互相覆盖。低优先级问题，建议带 `client_modified` 时间戳，加载时谁新用谁。
-6. **虚拟滚动 + 搜索**：搜索过滤后列表变短，virtual scroller 需要 reset 滚动位置。
-7. **iOS Safari 限制**：音频播放必须由用户手势触发第一次。自动连播没问题，但页面打开后不能自动开播。
-8. **大 index.json**：一万首大概 1-3MB JSON。上传/下载都可接受，但要 gzip。Dropbox 服务端不自动 gzip，可以考虑改用 `.json.gz` 自己压。
+5. **虚拟滚动 + 搜索**：搜索过滤后列表变短，virtual scroller 需要 reset 滚动位置。
+6. **iOS Safari 限制**：音频播放必须由用户手势触发第一次。自动连播没问题，但页面打开后不能自动开播。
+7. **大 index.json**：一万首大概 1-3MB JSON。下载可接受。如需更小，可让本地脚本生成 `.json.gz`，前端解压。
 
 ---
 
 ## 八、建议的开发顺序
 
-1. **登录 + token 刷新机制**（确保 API 能调通）
-2. **全量扫描 + 写 index.json**（核心数据有了）
-3. **基础列表展示 + 虚拟滚动**（能看到歌了）
-4. **播放器 + 队列**（能听了，就是 MVP）
-5. **增量同步**（启动变快）
-6. **搜索、按歌手分组**
-7. **设置、收藏、键盘快捷键、Media Session**
-8. **样式打磨、深色模式**
+每一步都能独立验证，不会陷入「写了一周还没东西能跑」的状态。每步给出 TODO 和验证项（✅ = 这步算完成的判据）。
 
-每一步都能独立验证，不会陷入「写了一周还没东西能跑」的状态。
+### 1. 登录 + token 刷新机制（确保 API 能调通）
+TODO：
+- 登录引导页：refresh_token 输入框，存入 `localStorage['dbx_refresh_token']`
+- `refreshAccessToken()`：用 refresh_token + app_key（PKCE，无 secret）POST `/oauth2/token` 换 access_token，存内存 + `expires_at`
+- `fetchWithAuth()` 拦截器：调用前检查 `expires_at`，提前 5 分钟自动刷新；401 → 清 token 回登录页
+TODO 验证：
+- ✅ 粘贴有效 token → 能成功换到 access_token，控制台无报错
+- ✅ 粘贴无效/过期 token → 回登录页并提示「凭证已过期」
+- ✅ 手动把 `expires_at` 改到过去 → 下次调用自动刷新成功
+
+### 2. 下载并解析 `/metainfo/index.json`（核心数据有了）
+TODO：
+- `loadIndex()`：`/files/download` 拉 `/metainfo/index.json`，`JSON.parse`
+- 解析进 Pinia：`files[]` + `settings`
+- 文件不存在 / 解析失败 → 显示对应提示（引导跑本地脚本 / 索引损坏）
+TODO 验证：
+- ✅ 有索引 → 控制台能打出曲目总数，与脚本生成的一致
+- ✅ 删掉/改名远端文件 → 出现「索引尚未生成」提示，不白屏
+- ✅ 故意上传一个坏 JSON → 有「索引损坏」提示，不崩
+
+### 3. 文件夹浏览器 + 面包屑导航（能按目录看到歌了）
+TODO：
+- 用 `files[].path` 构建目录树（前端内存，启动时算一次）
+- 当前目录视图：文件夹在前、歌曲在后；`📁` 单击进入、面包屑可逐级跳回
+- 单层条目用 `vue-virtual-scroller` 兜底
+TODO 验证：
+- ✅ 能从根逐层点进到最深目录，再用面包屑跳回任意层
+- ✅ 文件夹/歌曲数量与 Dropbox 实际目录一致
+- ✅ 某层有几千条时滚动不卡
+
+### 4. 播放器 + 队列（能听了，就是 MVP）
+TODO：
+- 双击歌曲 → `/files/get_temporary_link` 拿直链设给 `<audio>`
+- 队列：双击 = 把**当前目录（不递归）**所有歌入队并从该首播；`ended` 自动下一首
+- 底部播放器：播放/暂停、上一首/下一首、进度条 seek、音量
+- 队列 Tab：列表、拖拽/删除/跳播、清空、高亮当前项
+- `error` → 提示并跳下一首
+TODO 验证：
+- ✅ 双击能出声，进度条走动、可拖动 seek
+- ✅ 一首放完自动接下一首；上一首/下一首正确
+- ✅ 队列里删除当前项、清空、跳播行为正确
+- ✅ 拔网/坏链接 → 提示并跳下一首，不卡死
+
+### 5. 本地缓存 + rev 校验秒开（启动变快）
+TODO：
+- 索引下载后写 `index_cache` + `index_cache_rev`
+- 启动：先用 `index_cache` 渲染，再后台 `/files/get_metadata` 比对 rev
+- rev 相同 → 用缓存；不同/无缓存 → 重新下载并刷新
+- 「重新加载索引」按钮 = 跳过 rev 比对强制下载
+TODO 验证：
+- ✅ 第二次打开「秒开」（先出列表，无网络等待）
+- ✅ 本地脚本更新索引后 → 自动检测到 rev 变化并刷新列表
+- ✅ rev 没变 → 不重复下载（看 network 面板无 download 请求）
+
+### 6. 搜索（跨全部）+ 播放模式
+TODO：
+- 搜索框下方浮层列表：按歌名/歌手/路径实时过滤全部 `files`
+- 空输入 / 失焦 / `Esc` 收起；结果多时虚拟滚动 + 截断「前 N 条」
+- 浮层内双击 = 把搜索结果设为队列并播放
+- 播放模式：顺序 / 单曲循环 / 列表循环 / 随机，存 `localStorage.settings`
+TODO 验证：
+- ✅ 输入关键词即时出结果，中文/大小写都能匹配
+- ✅ 浮层双击播放后队列 = 搜索结果
+- ✅ 四种播放模式行为正确，刷新后模式被记住
+
+### 7. 设置面板 + 样式打磨
+TODO：
+- 设置面板：重新加载索引、清除凭证（清 token/缓存并 reload）、关于/版本号
+- 右侧沉浸区封面卡：圆角 + 投影 + 玻璃感 + 模糊背景；`封面 | 歌词` 切换
+- 左侧栏最小宽度 + 折叠；窄屏响应式
+TODO 验证：
+- ✅ 清除凭证后回到登录页，localStorage 相关 key 已清空
+- ✅ 封面卡视觉达标，窗口缩放时自适应居中不变形
+- ✅ 左侧栏可折叠/展开，手机宽度下布局不破
+
+### 8. 歌词显示（加分项）
+TODO：
+- 歌曲带 `lrc` 字段 → 拉取并解析 `.lrc`
+- 歌词视图逐行显示、当前行高亮、随进度滚动居中；无歌词显示占位
+TODO 验证：
+- ✅ 有歌词的歌切到歌词页能逐行高亮、滚动跟随
+- ✅ 无 `lrc` 字段的歌显示「暂无歌词」，不报错
 
 ---
 
 ## 九、凭证（refresh_token）安全方案
 
-### 9.1 采用方案
+**localStorage 明文存储 refresh_token**，配合以下几条措施：
 
-**localStorage 明文存储 refresh_token**，配合多层防御措施降低风险。
-
-完整方案：
-
-1. refresh_token 明文存在 `localStorage['dbx_refresh_token']`
-2. Dropbox App 配置为最小权限（见 9.3）
-3. 部署位置不公开传播 URL（见 9.4）
-4. 页面加 CSP 限制外联域名（见 9.5）
-5. 设置面板提供「清除凭证」按钮（见 9.6）
-6. 不引入非必要的 npm 依赖（见 9.7）
-
-### 9.2 威胁模型 — 这套方案防什么、不防什么
-
-| 威胁 | 是否防御 | 说明 |
-|---|---|---|
-| 陌生人偶然访问页面 URL | 防 | 不公开传播，URL 难被发现 |
-| token 泄露后被攻击者乱用 Dropbox 全盘 | 防 | App folder 隔离，攻击者只能动音乐文件夹 |
-| 恶意脚本把 token 偷偷发到外部域名 | 防 | CSP 拦截非 Dropbox 的 connect |
-| 误装恶意 npm 包 / 供应链投毒 | 部分防 | CSP 兜底，但依赖越少越好 |
-| **XSS 攻击（你自己页面有漏洞）** | **不防** | 纯前端无解，靠减少攻击面 |
-| **物理访问你的电脑（已登录浏览器）** | **不防** | 别人能开 DevTools 看到 token |
-| **同设备其他用户共享浏览器** | **不防** | 同上 |
-| **恶意浏览器扩展** | **不防** | 扩展权限高于页面 JS |
-
-> ⚠️ **重要认知**：纯静态网页中，**任何存储方式都无法防 XSS**。一旦页面跑了恶意 JS，token 无论怎么存都会被拿走。所以"存哪里"主要防的是**静态读取场景**（物理访问、陌生人开页面），而不是运行时窃取。
-
-### 9.3 ⚠️ 必做 — Dropbox App 配置（比"存哪里"重要 10 倍）
-
-去 [Dropbox App Console](https://www.dropbox.com/developers/apps) 创建应用时：
-
-- ✅ **Access type 选 `App folder`**，**不要**选 `Full Dropbox`
-  - 这样即使 token 完全泄露，攻击者也只能访问 `/Apps/<你的App名>/` 下的内容
-  - 把音乐文件挪进这个目录
-- ✅ **Permissions 只勾以下三项**：
-  - `files.metadata.read` — 列出文件
-  - `files.content.read` — 下载播放
-  - `files.content.write` — 写 index.json
-- ❌ **不要勾**：`account_info.read`、`sharing.*`、`file_requests.*`、任何 team 相关权限
-- ✅ 生成 refresh_token 时使用 **PKCE 流程**，避免暴露 `app_secret`
-
-> 💡 **这一步做完，安全等级提升远超任何存储方式的改动。** token 泄露的"爆炸半径"被物理隔离了。
-
-### 9.4 ⚠️ 必做 — 部署位置
-
-- ✅ 部署到 **Cloudflare Pages / GitHub Pages / Vercel** 等可控静态托管
-- ✅ URL 不主动公开传播（不发推、不分享、不放 readme）
-- ✅ 如果用 GitHub Pages，**仓库设为 private**（GitHub Pages 仍可正常 serve）
-- ❌ **不要**部署到任何会被搜索引擎索引的位置
-- ❌ **不要**嵌入到 iframe 或其他陌生站点
-
-### 9.5 ⚠️ 必做 — CSP 内容安全策略
-
-在部署配置里添加 HTTP header（Cloudflare Pages 用 `_headers` 文件，Vercel 用 `vercel.json`）：
-
-```
-Content-Security-Policy:
-  default-src 'self';
-  script-src 'self';
-  style-src 'self' 'unsafe-inline';
-  connect-src 'self'
-    https://api.dropbox.com
-    https://api.dropboxapi.com
-    https://content.dropboxapi.com
-    https://*.dropboxusercontent.com;
-  media-src https://*.dropboxusercontent.com;
-  img-src 'self' data:;
-  frame-ancestors 'none';
-```
-
-- 作用：即使页面被注入恶意脚本，浏览器也会拒绝把 token 发往非 Dropbox 域名
-- `frame-ancestors 'none'` 防止页面被嵌入 iframe（clickjacking 防御）
-
-### 9.6 ⚠️ 必做 — 「清除凭证」按钮
-
-设置面板里提供一键清除：
-
-```js
-localStorage.removeItem('dbx_refresh_token')
-localStorage.removeItem('index_cache')
-// ... 清掉所有相关 key
-location.reload()
-```
-
-用途：
-- 借给别人用电脑前清一下
-- 怀疑泄露时立即清除
-- 配合 [Dropbox connected apps 页面](https://www.dropbox.com/account/connected_apps) **撤销该 App**（这才是根治）
-
-### 9.7 ⚠️ 必做 — 减少 XSS 攻击面
-
-- ✅ 锁 lockfile（`package-lock.json` / `pnpm-lock.yaml`）提交到仓库
-- ✅ 依赖版本不要带 `^` 自动升级
-- ✅ 不引入任何分析 / 广告 / 第三方 CDN 脚本
-- ✅ 用户输入（搜索框、文件名等）渲染时**不要**用 `v-html`
-- ✅ npm 包能不装就不装，每个都是供应链风险点
-- ❌ **不要**为了省事引入大型 UI 库，挑小而专的库
-
-### 9.8 出问题怎么办（应急预案）
-
-发现 token 可能泄露：
-
-1. **立即**去 [dropbox.com/account/connected_apps](https://www.dropbox.com/account/connected_apps) 撤销该 App
-2. 在 Dropbox App Console 重新生成 refresh_token
-3. 检查 Dropbox 活动日志，看是否有异常下载
-4. 因为 App folder 隔离，最坏情况也只是音乐文件夹被动过，不影响其他文件
-
-### 9.9 升级路径（如果以后需要更高安全）
-
-本方案的设计允许平滑升级，**无需重构**：
-
-- **Level 2** — 密码加密：包一层 Web Crypto API，PBKDF2 + AES-GCM 加密后存 localStorage，启动时让用户输密码解密。防住物理访问场景。约 50 行代码。
-- **Level 3** — WebAuthn PRF：用 Touch ID / 硬件密钥派生加密 key。最佳 UX + 安全平衡。需要现代浏览器和 authenticator。
-- **Level 4** — 后端代理：加一个 Cloudflare Worker 保管 refresh_token，前端只拿短时 access_token。token 不再进入浏览器 JS，XSS 也偷不走。约 100 行 Worker 代码。
-
-### 9.10 安全检查清单（开发完成前过一遍）
-
-- [ ] Dropbox App 是 App folder 类型，不是 Full Dropbox
-- [ ] Dropbox App 权限只有三项必需 scope
-- [ ] 使用 PKCE 流程，没有把 `app_secret` 写进前端代码
-- [ ] 部署位置 URL 未公开传播
-- [ ] CSP header 已配置，`connect-src` 已限制
-- [ ] 设置面板有「清除凭证」按钮
-- [ ] 所有依赖都锁了版本
-- [ ] 代码里没有 `v-html` 渲染用户/Dropbox 数据
-- [ ] 没有引入任何第三方 CDN 脚本 / analytics
-- [ ] 知道在哪里能撤销 token（已把 connected_apps URL 收藏）
+1. **Dropbox App 最小权限（只读）**：在 [App Console](https://www.dropbox.com/developers/apps) 创建应用，Access type 选 `App folder`，Permissions 只勾 `files.metadata.read` + `files.content.read`，用 PKCE 流程拿 refresh_token（不暴露 `app_secret`）。本地扫描脚本另用一套带写权限的凭证。
+2. **CSP 限制外联域名**：部署配置里加 header，`connect-src` 只允许 Dropbox 域名，`media-src` 只允许 `*.dropboxusercontent.com`，`frame-ancestors 'none'`。
+   ```
+   Content-Security-Policy:
+     default-src 'self';
+     script-src 'self';
+     style-src 'self' 'unsafe-inline';
+     connect-src 'self' https://api.dropbox.com https://api.dropboxapi.com https://content.dropboxapi.com https://*.dropboxusercontent.com;
+     media-src https://*.dropboxusercontent.com;
+     img-src 'self' data:;
+     frame-ancestors 'none';
+   ```
+3. **「清除凭证」按钮**：设置面板里一键清掉 `dbx_refresh_token` / `index_cache` 等 localStorage key 并 reload。
+4. **减少依赖**：锁 lockfile、不引第三方 CDN / analytics、不用 `v-html` 渲染用户或 Dropbox 数据。

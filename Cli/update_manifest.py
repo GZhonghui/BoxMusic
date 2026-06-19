@@ -25,8 +25,8 @@ def update_by_filter(files_filter: list, output_file: str, pre = None):
     o.close()
 
 def main():
-    update_by_filter(['mp3', 'flac', 'm4a'], 'manifest.txt')
-    update_by_filter(['mp4', 'mkv'], 'manifest_v.txt', '视频/Video')
+    update_by_filter(['mp3', 'flac', 'm4a'], 'metainfo/manifest.txt')
+    update_by_filter(['mp4', 'mkv'], 'metainfo/manifest_v.txt', '视频/Video')
 
 if __name__ == '__main__':
     main()

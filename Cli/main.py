@@ -57,9 +57,10 @@ def download(dbx, file_path: str):
     return res.content
 
 # generate manifest.txt: tree . > manifest.txt @ Apps/ZhonghuiPlayer/
+# ?
 def sync_manifest(dbx):
     def sync_with_filename(filename: str):
-        manifest_path = f'/{filename}'
+        manifest_path = f'/metainfo/{filename}'
         with open(f'./{filename}', 'wb') as file:
             data = download(dbx, manifest_path)
             if data: file.write(data)

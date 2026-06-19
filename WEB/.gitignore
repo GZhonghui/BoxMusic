@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python（scripts/ 下的本地索引脚本）
+__pycache__/
+*.pyc

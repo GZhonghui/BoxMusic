@@ -22,6 +22,10 @@ AUDIO_EXTS = {'mp3', 'flac', 'm4a'}
 # 扫描时忽略的文件名
 IGNORE_FILES = {'.DS_Store'}
 
+# 命名顺序例外：这些一级目录下文件名是「歌名 - 歌手」（反序）。
+# 其余目录一律「歌手 - 歌名」。需要再加反序目录就往这个集合里塞名字。
+REVERSED_ORDER_DIRS = {'视频'}
+
 # 输出位置（App folder 内的相对路径）。固定 metainfo/index.json，应用内不可配置。
 OUTPUT_REL = 'metainfo/index.json'
 
@@ -32,13 +36,21 @@ ROOT_LABEL = 'Music'                     # 面包屑根节点显示名
 
 # ——— 实现 ———
 
-def parse_name(stem):
+def parse_name(stem, reversed_order=False):
     """从文件名（不含扩展名）解析 artist / title。
-    约定 '歌手 - 歌名'；没有 ' - ' 分隔时 artist 留空、整名当 title。"""
+    默认约定 '歌手 - 歌名'；reversed_order=True 时为 '歌名 - 歌手'（见 REVERSED_ORDER_DIRS）。
+    没有 ' - ' 分隔时 artist 留空、整名当 title。"""
     if ' - ' in stem:
-        artist, title = stem.split(' - ', 1)
-        return artist.strip(), title.strip()
+        left, right = (s.strip() for s in stem.split(' - ', 1))
+        return (right, left) if reversed_order else (left, right)
     return '', stem.strip()
+
+
+def is_reversed_order(app_path):
+    """按一级目录判断该文件是否用反序命名。
+    app_path 形如 /视频/xxx.mp3 → 一级目录是 '视频'。"""
+    segs = app_path.split('/')  # ['', '视频', 'xxx.mp3']
+    return len(segs) > 2 and segs[1] in REVERSED_ORDER_DIRS
 
 
 def to_app_path(abs_path):
@@ -58,9 +70,10 @@ def scan_files():
             if ext[1:].lower() not in AUDIO_EXTS:
                 continue
 
-            artist, title = parse_name(stem)
+            path = to_app_path(os.path.join(root, name))
+            artist, title = parse_name(stem, reversed_order=is_reversed_order(path))
             entry = {
-                'path': to_app_path(os.path.join(root, name)),
+                'path': path,
                 'name': name,
                 'artist': artist,
                 'title': title,

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { fetchWithAuth } from '../dropbox/api'
+import { fetchWithAuth, getTemporaryLink } from '../dropbox/api'
 
 // 索引固定路径（App folder 内），应用内不可配置（见 PLAN.md 四）
 const INDEX_PATH = '/metainfo/index.json'
@@ -17,6 +17,7 @@ const LS_REV = 'index_cache_rev'    // 远端 index 的 rev，判断要不要重
 export const useLibraryStore = defineStore('library', () => {
   const files = ref([])      // index.json 的 files[]，path 作唯一标识
   const settings = ref({})   // index.json 的 settings（default_cover / root_label 等）
+  const coverUrl = ref('')   // settings.default_cover 解析出的临时直链（沉浸区封面用）
 
   // 'idle' 未加载 | 'loading' 加载中 | 'ready' 就绪 | 'empty' 索引未生成 | 'error' 下载/解析失败
   const status = ref('idle')
@@ -52,6 +53,22 @@ export const useLibraryStore = defineStore('library', () => {
   function applyData(data) {
     files.value = data.files
     settings.value = data.settings || {}
+    loadCover()
+  }
+
+  // 解析 settings.default_cover 的临时直链（同一张图只解析一次；失败留空走占位）
+  let coverPathDone = ''
+  async function loadCover() {
+    const path = settings.value.default_cover
+    if (!path) { coverUrl.value = ''; coverPathDone = ''; return }
+    if (path === coverPathDone && coverUrl.value) return
+    try {
+      coverUrl.value = await getTemporaryLink(path)
+      coverPathDone = path
+    } catch (e) {
+      console.warn('[BoxMusic] 封面加载失败：', e.message)
+      coverUrl.value = ''
+    }
   }
 
   // 把一段 index.json 原文解析并应用；坏 JSON / 缺 files → 标记损坏返回 false
@@ -177,5 +194,5 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
-  return { files, settings, status, error, load, reload }
+  return { files, settings, coverUrl, status, error, load, reload }
 })

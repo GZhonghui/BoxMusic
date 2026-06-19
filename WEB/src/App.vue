@@ -8,15 +8,21 @@ import FolderBrowser from './components/FolderBrowser.vue'
 import QueueList from './components/QueueList.vue'
 import PlayerBar from './components/PlayerBar.vue'
 import SearchBox from './components/SearchBox.vue'
+import ImmersiveView from './components/ImmersiveView.vue'
+import SettingsPanel from './components/SettingsPanel.vue'
 
 const auth = useAuthStore()
 const library = useLibraryStore()
 const player = usePlayerStore()
 
-// 左侧单栏 Tab：浏览 / 队列（见 PLAN.md 二）
+// 左侧栏 Tab：浏览 / 队列（见 PLAN.md 二）
 const tab = ref('browse')
+// 左侧栏折叠（折叠后右侧沉浸区铺满）
+const collapsed = ref(false)
+// 设置面板开关
+const showSettings = ref(false)
 
-// 进入已登录态就加载索引（流程 1）。rev 比对 / 秒开缓存留到第 5 步。
+// 进入已登录态就加载索引（流程 1：缓存秒开 + 后台 rev 校验）
 watch(
   () => auth.isAuthenticated,
   (ok) => {
@@ -39,37 +45,47 @@ watch(
         <template v-else-if="library.status === 'ready'">已加载 · {{ library.files.length }} 首</template>
         <template v-else>索引未就绪</template>
       </span>
-      <button class="ghost" :disabled="library.status === 'loading'" @click="library.reload()">
-        重新加载索引
-      </button>
-      <button class="ghost" @click="auth.logout()">退出登录</button>
+      <button class="icon-btn" title="设置" @click="showSettings = true">⚙</button>
     </header>
 
-    <template v-if="library.status === 'ready'">
-      <nav class="tabs">
-        <button :class="{ active: tab === 'browse' }" @click="tab = 'browse'">浏览</button>
-        <button :class="{ active: tab === 'queue' }" @click="tab = 'queue'">
-          队列<span v-if="player.queue.length"> · {{ player.queue.length }}</span>
-        </button>
-      </nav>
+    <div class="body">
+      <template v-if="library.status === 'ready'">
+        <!-- 折叠后停靠在左缘、用于重新展开 -->
+        <button v-show="collapsed" class="expand" title="展开列表" @click="collapsed = false">›</button>
 
-      <main class="main">
-        <FolderBrowser v-show="tab === 'browse'" />
-        <QueueList v-if="tab === 'queue'" />
-      </main>
+        <aside class="sidebar" :class="{ collapsed }">
+          <div class="side-head">
+            <nav class="tabs">
+              <button :class="{ active: tab === 'browse' }" @click="tab = 'browse'">浏览</button>
+              <button :class="{ active: tab === 'queue' }" @click="tab = 'queue'">
+                队列<span v-if="player.queue.length"> · {{ player.queue.length }}</span>
+              </button>
+            </nav>
+            <button class="collapse" title="折叠列表" @click="collapsed = true">‹</button>
+          </div>
+          <div class="side-body">
+            <FolderBrowser v-show="tab === 'browse'" />
+            <QueueList v-if="tab === 'queue'" />
+          </div>
+        </aside>
 
-      <p v-if="player.error" class="player-error" @click="player.error = ''">{{ player.error }}</p>
-
-      <PlayerBar />
-    </template>
-
-    <main v-else class="main state">
-      <p v-if="library.status === 'loading'">正在加载索引…</p>
-      <template v-else>
-        <p class="msg">{{ library.error || '索引尚未加载' }}</p>
-        <button @click="library.load()">重试</button>
+        <ImmersiveView class="immersive" />
       </template>
-    </main>
+
+      <div v-else class="state">
+        <p v-if="library.status === 'loading'">正在加载索引…</p>
+        <template v-else>
+          <p class="msg">{{ library.error || '索引尚未加载' }}</p>
+          <button class="primary" @click="library.load()">重试</button>
+        </template>
+      </div>
+    </div>
+
+    <p v-if="player.error" class="player-error" @click="player.error = ''">{{ player.error }}</p>
+
+    <PlayerBar />
+
+    <SettingsPanel v-if="showSettings" @close="showSettings = false" />
   </div>
 </template>
 
@@ -103,11 +119,57 @@ watch(
   flex: 1;
 }
 
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #33363f;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: #23252d;
+  color: var(--fg);
+}
+
+/* 主体：左侧栏 + 右侧沉浸区 */
+.body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.sidebar {
+  flex: none;
+  width: 340px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid #2a2c34;
+}
+
+.sidebar.collapsed {
+  display: none;
+}
+
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 0 12px;
+  border-bottom: 1px solid #2a2c34;
+}
+
 .tabs {
   display: flex;
   gap: 4px;
-  padding: 8px 12px 0;
-  border-bottom: 1px solid #2a2c34;
 }
 
 .tabs button {
@@ -125,12 +187,55 @@ watch(
   border-bottom-color: #6366f1;
 }
 
-.main {
+.collapse,
+.expand {
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.collapse {
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.collapse:hover {
+  background: #23252d;
+  color: var(--fg);
+}
+
+.expand {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 10;
+  transform: translateY(-50%);
+  padding: 14px 6px;
+  border-radius: 0 8px 8px 0;
+  background: #23252d;
+  border: 1px solid #2a2c34;
+  border-left: none;
+}
+
+.expand:hover {
+  color: var(--fg);
+}
+
+.side-body {
   flex: 1;
   min-height: 0;
 }
 
+.immersive {
+  flex: 1;
+  min-width: 0;
+}
+
 .state {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -156,7 +261,7 @@ watch(
   cursor: pointer;
 }
 
-button {
+.primary {
   padding: 8px 16px;
   border: none;
   border-radius: 8px;
@@ -167,16 +272,25 @@ button {
   cursor: pointer;
 }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
+/* 窄屏：隐藏沉浸区，左侧栏铺满（始终展开） */
+@media (max-width: 720px) {
+  .immersive {
+    display: none;
+  }
 
-button.ghost {
-  padding: 7px 14px;
-  background: transparent;
-  border: 1px solid #33363f;
-  color: var(--fg-muted);
-  font-weight: 500;
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+  }
+
+  .sidebar.collapsed {
+    display: flex;
+  }
+
+  .expand,
+  .collapse {
+    display: none;
+  }
 }
 </style>

@@ -1,9 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchWithAuth } from '../dropbox/api'
+import { getTemporaryLink } from '../dropbox/api'
+import { extractCover } from '../lib/cover'
 import { trackTitle } from '../lib/display'
-
-const TEMP_LINK_URL = 'https://api.dropboxapi.com/2/files/get_temporary_link'
 
 // 播放模式：顺序 / 单曲循环 / 列表循环 / 随机
 export const MODES = ['order', 'repeat-one', 'repeat-all', 'shuffle']
@@ -23,6 +22,7 @@ export const usePlayerStore = defineStore('player', () => {
   const volume = ref(1)
   const mode = ref('order')     // 播放模式，持久化到 localStorage.settings
   const error = ref('')         // 最近一次播放错误提示
+  const trackCover = ref('')    // 当前曲内嵌封面的 objectURL，空 = 回退默认封面
 
   const currentTrack = computed(() => queue.value[currentIndex.value] || null)
 
@@ -41,38 +41,41 @@ export const usePlayerStore = defineStore('player', () => {
     failCurrent(`播放出错，已跳过：${trackTitle(currentTrack.value)}`)
   })
 
-  // 取 4 小时有效直链
-  async function getLink(path) {
-    const res = await fetchWithAuth(TEMP_LINK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    })
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '')
-      throw new Error(`取直链失败 (HTTP ${res.status})${detail ? `：${detail}` : ''}`)
-    }
-    const data = await res.json()
-    return data.link
-  }
-
   // 播放队列第 index 首
   async function playAt(index) {
     if (index < 0 || index >= queue.value.length) return
     currentIndex.value = index
     error.value = ''
+    setTrackCover('') // 切歌先清空封面，提取完再填（期间走默认封面占位）
     const track = queue.value[index]
     try {
-      const link = await getLink(track.path)
+      const link = await getTemporaryLink(track.path)
       if (currentIndex.value !== index) return // 等待期间用户已切歌，丢弃这次
       audio.src = link
       audio.currentTime = 0
       // 播放被拒（如浏览器策略）由用户手动恢复；真正的媒体错误走 error 事件
       await audio.play().catch(() => {})
+      loadTrackCover(link, track.path) // 顺手读内嵌封面（非阻塞，失败回退默认）
     } catch (e) {
       if (currentIndex.value !== index) return
       failCurrent(`无法播放《${trackTitle(track)}》：${e.message}`)
     }
+  }
+
+  // 替换当前曲封面 objectURL，释放上一个，避免内存泄漏
+  function setTrackCover(url) {
+    if (trackCover.value) URL.revokeObjectURL(trackCover.value)
+    trackCover.value = url || ''
+  }
+
+  // 读正在播放这首的内嵌封面（只此一首，非阻塞）；期间已切歌则丢弃
+  async function loadTrackCover(link, path) {
+    const url = await extractCover(link)
+    if (currentTrack.value?.path !== path) {
+      if (url) URL.revokeObjectURL(url)
+      return
+    }
+    setTrackCover(url)
   }
 
   // 当前曲失败：记下提示并「线性」顺延到下一首。
@@ -218,6 +221,7 @@ export const usePlayerStore = defineStore('player', () => {
     progress.value = 0
     duration.value = 0
     error.value = ''
+    setTrackCover('')
   }
 
   return {
@@ -230,6 +234,7 @@ export const usePlayerStore = defineStore('player', () => {
     volume,
     mode,
     error,
+    trackCover,
     playList,
     jumpTo,
     togglePlay,

@@ -184,7 +184,8 @@
 | key | 内容 |
 |---|---|
 | `dbx_refresh_token` | refresh token |
-| `dbx_app_key` | app key（PKCE 流程，无 secret） |
+| `dbx_app_key` | app key |
+| `dbx_app_secret` | app secret（刷新 token 需要） |
 | `index_cache` | 本地 index.json 副本（用于秒开） |
 | `index_cache_rev` | 远端 index 的 rev/版本号，判断要不要重拉 |
 | `settings` | `{ play_mode, volume }` |
@@ -397,9 +398,10 @@ TODO 验证：
 
 ## 九、凭证（refresh_token）安全方案
 
-**localStorage 明文存储 refresh_token**，配合以下几条措施：
+**localStorage 明文存储 refresh_token + app_key + app_secret**，配合以下几条措施：
 
-1. **Dropbox App 最小权限（只读）**：在 [App Console](https://www.dropbox.com/developers/apps) 创建应用，Access type 选 `App folder`，Permissions 只勾 `files.metadata.read` + `files.content.read`，用 PKCE 流程拿 refresh_token（不暴露 `app_secret`）。本地扫描脚本另用一套带写权限的凭证。
+1. **Dropbox App 最小权限（只读）**：在 [App Console](https://www.dropbox.com/developers/apps) 创建应用，Access type 选 `App folder`，Permissions 只勾 `files.metadata.read` + `files.content.read`。刷新 access_token 走机密客户端方式（`refresh_token` + `app_key` + `app_secret`，与 rclone 同一套凭证），三者都存 localStorage。本地扫描脚本另用一套带写权限的凭证。
+   > 取舍：原计划用 PKCE 不存 secret，但现成的 refresh_token 是带 secret 换的、无 secret 刷不动；为复用凭证、保持实现简单，改为存 secret。代价是 secret 明文落在本浏览器（个人本地使用，风险可控）。
 2. **CSP 限制外联域名**：部署配置里加 header，`connect-src` 只允许 Dropbox 域名，`media-src` 只允许 `*.dropboxusercontent.com`，`frame-ancestors 'none'`。
    ```
    Content-Security-Policy:

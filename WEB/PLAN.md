@@ -311,15 +311,23 @@
 
 每一步都能独立验证，不会陷入「写了一周还没东西能跑」的状态。每步给出 TODO 和验证项（✅ = 这步算完成的判据）。
 
-### 1. 登录 + token 刷新机制（确保 API 能调通）
-TODO：
-- 登录引导页：refresh_token 输入框，存入 `localStorage['dbx_refresh_token']`
-- `refreshAccessToken()`：用 refresh_token + app_key（PKCE，无 secret）POST `/oauth2/token` 换 access_token，存内存 + `expires_at`
-- `fetchWithAuth()` 拦截器：调用前检查 `expires_at`，提前 5 分钟自动刷新；401 → 清 token 回登录页
+> **当前进度**（截至 2026-06-19）
+> - [x] **第 1 步：登录 + token 刷新** —— 已完成并验证（commit `e0a4fbe`）
+> - [ ] 第 2 步：下载并解析 `/metainfo/index.json` ← 下一步
+> - [ ] 第 3~8 步：未开始
+
+### 1. 登录 + token 刷新机制（确保 API 能调通）✅ 已完成
+实现说明：
+- `src/stores/auth.js`：Pinia 鉴权 store。持久化 refresh_token/app_key/app_secret，access_token 只存内存；提前 5 分钟刷新；`login()` 先换 token 校验、成功才落盘；刷新失败/401 → `logout()` 回登录页。
+- `src/dropbox/api.js`：`fetchWithAuth()` 拦截器，自动加 Authorization、401 清凭证。
+- `src/components/LoginView.vue`：登录引导页（refresh_token / app_key / app_secret 三个输入框）。
+- `src/App.vue`：按登录态切换；临时连接测试占位（第 3 步会被真正的应用骨架替换）。
+- 凭证方案：改为机密客户端（key+secret，复用 rclone 同一套），见 §九取舍说明。
+
 TODO 验证：
-- ✅ 粘贴有效 token → 能成功换到 access_token，控制台无报错
-- ✅ 粘贴无效/过期 token → 回登录页并提示「凭证已过期」
-- ✅ 手动把 `expires_at` 改到过去 → 下次调用自动刷新成功
+- ✅ 粘贴有效凭证 → 换到 access_token，连接测试返回根目录条目
+- ✅ 粘贴无效凭证 → 报错并带 Dropbox 原文
+- ✅ token 过期 → 下次调用自动刷新（提前 5 分钟）；401 回登录页
 
 ### 2. 下载并解析 `/metainfo/index.json`（核心数据有了）
 TODO：

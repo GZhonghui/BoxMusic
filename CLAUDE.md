@@ -42,6 +42,6 @@ npm run preview  # 预览构建产物
 
 - **设计原则（从简）**：功能不追求多，追求稳定、安全、好维护。写代码前先想是不是最简单稳定的实现，不该写的别写。改 WEB 时不要擅自加 PLAN.md 里已砍掉的功能（收藏夹、命名歌单、深色模式、键盘快捷键等）。
 - **Dropbox App folder**：两版共用 `/Apps/ZhonghuiPlayer/`，API 路径里的 `/` 即该目录根。WEB 用只读权限（`files.metadata.read` + `files.content.read`）。
-- **密钥**：`CLI/token.txt` 是 Dropbox 凭证，已被 gitignore，**不要提交**。
+- **密钥**：`CLI/token.txt` 是 Dropbox 凭证，已被 `CLI/.gitignore` 忽略，**不要提交**。
 - **提交习惯**：只在用户明确要求时提交；提交信息用中文（与现有 git history 一致）。
-- 根目录 `.gitignore` 面向 Python（CLI）；`WEB/.gitignore` 面向 Node。
+- **`.gitignore` 分三份**：根目录只忽略 `.DS_Store`；`CLI/.gitignore` 面向 Python（含 `token.txt`、`Cache/`、`manifest.txt` 等）；`WEB/.gitignore` 面向 Node。

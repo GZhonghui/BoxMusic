@@ -7,6 +7,7 @@ import LoginView from './components/LoginView.vue'
 import FolderBrowser from './components/FolderBrowser.vue'
 import QueueList from './components/QueueList.vue'
 import PlayerBar from './components/PlayerBar.vue'
+import SearchBox from './components/SearchBox.vue'
 
 const auth = useAuthStore()
 const library = useLibraryStore()
@@ -31,12 +32,13 @@ watch(
   <div v-else class="app">
     <header class="topbar">
       <strong class="brand">BoxMusic</strong>
+      <SearchBox v-if="library.status === 'ready'" />
+      <span class="spacer" />
       <span class="status">
         <template v-if="library.status === 'loading'">正在加载索引…</template>
         <template v-else-if="library.status === 'ready'">已加载 · {{ library.files.length }} 首</template>
         <template v-else>索引未就绪</template>
       </span>
-      <span class="spacer" />
       <button class="ghost" :disabled="library.status === 'loading'" @click="library.reload()">
         重新加载索引
       </button>

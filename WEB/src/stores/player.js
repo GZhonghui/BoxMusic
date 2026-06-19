@@ -5,6 +5,10 @@ import { trackTitle } from '../lib/display'
 
 const TEMP_LINK_URL = 'https://api.dropboxapi.com/2/files/get_temporary_link'
 
+// 播放模式：顺序 / 单曲循环 / 列表循环 / 随机
+export const MODES = ['order', 'repeat-one', 'repeat-all', 'shuffle']
+const LS_SETTINGS = 'settings' // { play_mode, volume }
+
 // 播放器 + 队列。只有一个「当前播放队列」（见 PLAN.md：不做收藏夹 / 命名歌单）。
 // 第 4 步只做顺序播放；播放模式（循环/随机）留到第 6 步。
 export const usePlayerStore = defineStore('player', () => {
@@ -17,17 +21,20 @@ export const usePlayerStore = defineStore('player', () => {
   const progress = ref(0)       // 当前秒数
   const duration = ref(0)
   const volume = ref(1)
+  const mode = ref('order')     // 播放模式，持久化到 localStorage.settings
   const error = ref('')         // 最近一次播放错误提示
 
   const currentTrack = computed(() => queue.value[currentIndex.value] || null)
 
+  // 启动时恢复上次的播放模式 / 音量
+  loadSettings()
   audio.volume = volume.value
 
   audio.addEventListener('timeupdate', () => { progress.value = audio.currentTime })
   audio.addEventListener('durationchange', () => { duration.value = audio.duration || 0 })
   audio.addEventListener('play', () => { isPlaying.value = true })
   audio.addEventListener('pause', () => { isPlaying.value = false })
-  audio.addEventListener('ended', () => { next() })
+  audio.addEventListener('ended', () => { onEnded() })
   // 媒体层错误（坏链 / 网络中断）→ 提示并跳下一首，不卡死
   audio.addEventListener('error', () => {
     if (currentIndex.value < 0 || !audio.src) return
@@ -68,24 +75,59 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 当前曲失败：记下提示并顺延到下一首
+  // 当前曲失败：记下提示并「线性」顺延到下一首。
+  // 刻意不按 mode（循环/随机），避免坏链在 repeat-all/shuffle 下无限重试。
   function failCurrent(msg) {
     error.value = msg
-    next()
-  }
-
-  function next() {
     if (currentIndex.value < queue.value.length - 1) {
       playAt(currentIndex.value + 1)
     } else {
-      // 队列到底，停下（无循环模式）
       audio.pause()
       isPlaying.value = false
     }
   }
 
+  // 随机一个与当前不同的下标
+  function randomIndex() {
+    const n = queue.value.length
+    if (n <= 1) return 0
+    let i = Math.floor(Math.random() * n)
+    if (i === currentIndex.value) i = (i + 1) % n
+    return i
+  }
+
+  // 自然播完一首：按 mode 决定下一步
+  function onEnded() {
+    if (mode.value === 'repeat-one') {
+      audio.currentTime = 0
+      audio.play().catch(() => {})
+      return
+    }
+    if (mode.value === 'shuffle') {
+      playAt(randomIndex())
+      return
+    }
+    // order / repeat-all
+    if (currentIndex.value < queue.value.length - 1) playAt(currentIndex.value + 1)
+    else if (mode.value === 'repeat-all') playAt(0)
+    else { audio.pause(); isPlaying.value = false } // 顺序到底，停
+  }
+
+  // 手动下一首：随机模式随机，否则顺延，列表循环到底回到头
+  function next() {
+    if (!queue.value.length) return
+    if (mode.value === 'shuffle') { playAt(randomIndex()); return }
+    if (currentIndex.value < queue.value.length - 1) playAt(currentIndex.value + 1)
+    else if (mode.value === 'repeat-all') playAt(0)
+    else { audio.pause(); isPlaying.value = false }
+  }
+
+  // 手动上一首：随机模式随机，否则回退，列表循环到头回到尾
   function prev() {
+    if (!queue.value.length) return
+    if (mode.value === 'shuffle') { playAt(randomIndex()); return }
     if (currentIndex.value > 0) playAt(currentIndex.value - 1)
+    else if (mode.value === 'repeat-all') playAt(queue.value.length - 1)
   }
 
   // 用一组歌设为队列并从 startIndex 播（双击文件夹内某首时调用）
@@ -112,6 +154,32 @@ export const usePlayerStore = defineStore('player', () => {
   function setVolume(v) {
     volume.value = v
     audio.volume = v
+    persistSettings()
+  }
+
+  // 切换播放模式（按 MODES 顺序循环），并持久化
+  function cycleMode() {
+    const i = MODES.indexOf(mode.value)
+    mode.value = MODES[(i + 1) % MODES.length]
+    persistSettings()
+  }
+
+  function loadSettings() {
+    try {
+      const s = JSON.parse(localStorage.getItem(LS_SETTINGS) || '{}')
+      if (MODES.includes(s.play_mode)) mode.value = s.play_mode
+      if (typeof s.volume === 'number' && s.volume >= 0 && s.volume <= 1) volume.value = s.volume
+    } catch {
+      // 设置损坏：用默认值即可，忽略
+    }
+  }
+
+  function persistSettings() {
+    try {
+      localStorage.setItem(LS_SETTINGS, JSON.stringify({ play_mode: mode.value, volume: volume.value }))
+    } catch (e) {
+      console.warn('[BoxMusic] 保存播放设置失败：', e)
+    }
   }
 
   // 从队列移除某项，并把 currentIndex 调到正确位置
@@ -160,6 +228,7 @@ export const usePlayerStore = defineStore('player', () => {
     progress,
     duration,
     volume,
+    mode,
     error,
     playList,
     jumpTo,
@@ -168,6 +237,7 @@ export const usePlayerStore = defineStore('player', () => {
     prev,
     seek,
     setVolume,
+    cycleMode,
     removeAt,
     moveItem,
     clear,

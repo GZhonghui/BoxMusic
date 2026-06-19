@@ -8,6 +8,14 @@ const player = usePlayerStore()
 const track = computed(() => player.currentTrack)
 const hasTrack = computed(() => !!track.value)
 
+const MODE_LABEL = {
+  order: { icon: '➡️', text: '顺序播放' },
+  'repeat-one': { icon: '🔂', text: '单曲循环' },
+  'repeat-all': { icon: '🔁', text: '列表循环' },
+  shuffle: { icon: '🔀', text: '随机播放' },
+}
+const modeInfo = computed(() => MODE_LABEL[player.mode] || MODE_LABEL.order)
+
 function onSeek(e) {
   player.seek(Number(e.target.value))
 }
@@ -33,6 +41,9 @@ function onVolume(e) {
     <!-- 控制 + 进度 -->
     <div class="center">
       <div class="controls">
+        <button class="mode" :title="`播放模式：${modeInfo.text}（点击切换）`" @click="player.cycleMode()">
+          {{ modeInfo.icon }}
+        </button>
         <button :disabled="!hasTrack" @click="player.prev()" title="上一首">⏮</button>
         <button class="play" :disabled="!hasTrack" @click="player.togglePlay()">
           {{ player.isPlaying ? '⏸' : '▶' }}
@@ -149,6 +160,10 @@ function onVolume(e) {
 .controls button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.controls button.mode {
+  font-size: 15px;
 }
 
 .progress {

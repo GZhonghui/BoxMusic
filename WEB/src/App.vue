@@ -19,7 +19,7 @@ const tab = ref('browse')
 watch(
   () => auth.isAuthenticated,
   (ok) => {
-    if (ok && library.status === 'idle') library.loadIndex()
+    if (ok && library.status === 'idle') library.load()
   },
   { immediate: true },
 )
@@ -37,7 +37,7 @@ watch(
         <template v-else>索引未就绪</template>
       </span>
       <span class="spacer" />
-      <button class="ghost" :disabled="library.status === 'loading'" @click="library.loadIndex()">
+      <button class="ghost" :disabled="library.status === 'loading'" @click="library.reload()">
         重新加载索引
       </button>
       <button class="ghost" @click="auth.logout()">退出登录</button>
@@ -65,7 +65,7 @@ watch(
       <p v-if="library.status === 'loading'">正在加载索引…</p>
       <template v-else>
         <p class="msg">{{ library.error || '索引尚未加载' }}</p>
-        <button @click="library.loadIndex()">重试</button>
+        <button @click="library.load()">重试</button>
       </template>
     </main>
   </div>

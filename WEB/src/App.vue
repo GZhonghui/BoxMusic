@@ -1,102 +1,110 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { watch } from 'vue'
 import { useAuthStore } from './stores/auth'
 import { useLibraryStore } from './stores/library'
-import { fetchWithAuth } from './dropbox/api'
 import LoginView from './components/LoginView.vue'
+import FolderBrowser from './components/FolderBrowser.vue'
 
 const auth = useAuthStore()
 const library = useLibraryStore()
 
-// —— 临时占位：仅用于验证第 1 步「登录 + token 刷新机制」（确保 API 能调通）。
-//    后续第 3 步会用真正的应用骨架替换整块已登录视图。
-const testState = ref('idle') // idle | loading | ok | error
-const testMsg = ref('')
-
-const expiresText = computed(() => {
-  if (!auth.expiresAt) return '尚未获取（首次调用时刷新）'
-  return new Date(auth.expiresAt).toLocaleString()
-})
-
-async function testConnection() {
-  testState.value = 'loading'
-  testMsg.value = ''
-  try {
-    // App folder 根目录就是空字符串 path，列前几条验证读权限
-    const res = await fetchWithAuth('https://api.dropboxapi.com/2/files/list_folder', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: '', limit: 5 }),
-    })
-    if (!res.ok) throw new Error(`API HTTP ${res.status}`)
-    const data = await res.json()
-    testState.value = 'ok'
-    testMsg.value = `连接成功，App 根目录返回 ${data.entries.length} 个条目`
-  } catch (e) {
-    testState.value = 'error'
-    testMsg.value = e.message
-  }
-}
+// 进入已登录态就加载索引（流程 1）。rev 比对 / 秒开缓存留到第 5 步。
+watch(
+  () => auth.isAuthenticated,
+  (ok) => {
+    if (ok && library.status === 'idle') library.loadIndex()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
   <LoginView v-if="!auth.isAuthenticated" />
 
-  <div v-else class="placeholder">
-    <h2>已登录 ✓</h2>
-    <p class="hint">第 1 步占位页（待第 3 步替换）。access_token 过期时间：{{ expiresText }}</p>
-
-    <div class="actions">
-      <button @click="testConnection" :disabled="testState === 'loading'">
-        {{ testState === 'loading' ? '测试中…' : '测试连接' }}
-      </button>
-      <button @click="library.loadIndex()" :disabled="library.status === 'loading'">
-        {{ library.status === 'loading' ? '加载索引中…' : '加载索引' }}
+  <div v-else class="app">
+    <header class="topbar">
+      <strong class="brand">BoxMusic</strong>
+      <span class="status">
+        <template v-if="library.status === 'loading'">正在加载索引…</template>
+        <template v-else-if="library.status === 'ready'">已加载 · {{ library.files.length }} 首</template>
+        <template v-else>索引未就绪</template>
+      </span>
+      <span class="spacer" />
+      <button class="ghost" :disabled="library.status === 'loading'" @click="library.loadIndex()">
+        重新加载索引
       </button>
       <button class="ghost" @click="auth.logout()">退出登录</button>
-    </div>
+    </header>
 
-    <p v-if="testMsg" :class="['result', testState]">{{ testMsg }}</p>
+    <main class="main">
+      <FolderBrowser v-if="library.status === 'ready'" />
 
-    <p
-      v-if="library.status !== 'idle' && library.status !== 'loading'"
-      :class="['result', library.status === 'ready' ? 'ok' : 'error']"
-    >
-      <template v-if="library.status === 'ready'">索引加载成功，共 {{ library.files.length }} 首</template>
-      <template v-else>{{ library.error }}</template>
-    </p>
+      <div v-else class="state">
+        <p v-if="library.status === 'loading'">正在加载索引…</p>
+        <template v-else>
+          <p class="msg">{{ library.error || '索引尚未加载' }}</p>
+          <button @click="library.loadIndex()">重试</button>
+        </template>
+      </div>
+    </main>
   </div>
 </template>
 
 <style scoped>
-.placeholder {
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #2a2c34;
+  background: #1a1c22;
+}
+
+.brand {
+  font-size: 16px;
+  letter-spacing: 0.5px;
+}
+
+.status {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.main {
+  flex: 1;
+  min-height: 0;
+}
+
+.state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 14px;
-  height: 100dvh;
+  height: 100%;
   padding: 24px;
   text-align: center;
 }
 
-h2 {
+.msg {
   margin: 0;
-}
-
-.hint {
-  margin: 0;
+  max-width: 480px;
   color: var(--fg-muted);
-  font-size: 13px;
-}
-
-.actions {
-  display: flex;
-  gap: 12px;
+  line-height: 1.6;
 }
 
 button {
-  padding: 9px 18px;
+  padding: 8px 16px;
   border: none;
   border-radius: 8px;
   background: #6366f1;
@@ -112,21 +120,10 @@ button:disabled {
 }
 
 button.ghost {
+  padding: 7px 14px;
   background: transparent;
   border: 1px solid #33363f;
   color: var(--fg-muted);
-}
-
-.result {
-  margin: 0;
-  font-size: 14px;
-}
-
-.result.ok {
-  color: #4ade80;
-}
-
-.result.error {
-  color: #f87171;
+  font-weight: 500;
 }
 </style>

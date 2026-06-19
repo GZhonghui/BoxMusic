@@ -316,8 +316,9 @@
 > - [x] **本地索引生成脚本** —— `scripts/build_index.py` 已就绪并实跑生成 `index.json`（第 2 步的前置）
 > - [x] **第 2 步：下载并解析 `/metainfo/index.json`** —— 已完成并验证（实测加载 5242 首）
 > - [x] **第 3 步：文件夹浏览器 + 面包屑导航** —— 已完成并验证
-> - [ ] 第 4 步：播放器 + 队列（MVP）← 下一步
-> - [ ] 第 5~8 步：未开始
+> - [x] **第 4 步：播放器 + 队列（MVP）** —— 已完成并验证
+> - [ ] 第 5 步：本地缓存 + rev 校验秒开 ← 下一步
+> - [ ] 第 6~8 步：未开始
 
 ### 1. 登录 + token 刷新机制（确保 API 能调通）✅ 已完成
 实现说明：
@@ -356,13 +357,15 @@ TODO 验证：
 - ✅ 文件夹/歌曲数量与 Dropbox 实际目录一致
 - ✅ 某层有几千条时滚动不卡
 
-### 4. 播放器 + 队列（能听了，就是 MVP）
-TODO：
-- 双击歌曲 → `/files/get_temporary_link` 拿直链设给 `<audio>`
-- 队列：双击 = 把**当前目录（不递归）**所有歌入队并从该首播；`ended` 自动下一首
-- 底部播放器：播放/暂停、上一首/下一首、进度条 seek、音量
-- 队列 Tab：列表、拖拽/删除/跳播、清空、高亮当前项
-- `error` → 提示并跳下一首
+### 4. 播放器 + 队列（能听了，就是 MVP）✅ 已完成
+实现说明：
+- `src/stores/player.js`：唯一播放队列 + store 持有的常驻 `<audio>`（切 Tab 不中断）。`playList`/`playAt`/`next`/`prev`/`togglePlay`/`seek`/`setVolume`/`jumpTo`/`removeAt`/`moveItem`（拖拽换序）/`clear`。取直链走 `/files/get_temporary_link`；`ended` 自动下一首；取链失败或媒体 `error` → 提示并跳下一首，队列到底停下；切歌竞态防护。
+- `src/components/PlayerBar.vue`：底部常驻播放器（信息 / 上下首 / 播放暂停 / 进度 seek / 音量）。
+- `src/components/QueueList.vue`：队列 Tab，高亮当前、双击跳播、删除、原生拖拽换序、清空。
+- `FolderBrowser.vue`：双击 = 当前目录（不递归）所有歌入队从该首播；播放中高亮。
+- `src/lib/display.js`：标题 / 歌手 / 时间格式化，三组件共用。
+- `App.vue`：加 `浏览/队列` Tab（浏览用 v-show 保留导航位置）、播放错误提示条、底部 PlayerBar。
+- 播放模式（顺序/循环/随机）按计划留到第 6 步，本步只顺序播放。
 TODO 验证：
 - ✅ 双击能出声，进度条走动、可拖动 seek
 - ✅ 一首放完自动接下一首；上一首/下一首正确

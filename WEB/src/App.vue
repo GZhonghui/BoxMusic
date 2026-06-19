@@ -1,12 +1,19 @@
 <script setup>
-import { watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useAuthStore } from './stores/auth'
 import { useLibraryStore } from './stores/library'
+import { usePlayerStore } from './stores/player'
 import LoginView from './components/LoginView.vue'
 import FolderBrowser from './components/FolderBrowser.vue'
+import QueueList from './components/QueueList.vue'
+import PlayerBar from './components/PlayerBar.vue'
 
 const auth = useAuthStore()
 const library = useLibraryStore()
+const player = usePlayerStore()
+
+// 左侧单栏 Tab：浏览 / 队列（见 PLAN.md 二）
+const tab = ref('browse')
 
 // 进入已登录态就加载索引（流程 1）。rev 比对 / 秒开缓存留到第 5 步。
 watch(
@@ -36,16 +43,30 @@ watch(
       <button class="ghost" @click="auth.logout()">退出登录</button>
     </header>
 
-    <main class="main">
-      <FolderBrowser v-if="library.status === 'ready'" />
+    <template v-if="library.status === 'ready'">
+      <nav class="tabs">
+        <button :class="{ active: tab === 'browse' }" @click="tab = 'browse'">浏览</button>
+        <button :class="{ active: tab === 'queue' }" @click="tab = 'queue'">
+          队列<span v-if="player.queue.length"> · {{ player.queue.length }}</span>
+        </button>
+      </nav>
 
-      <div v-else class="state">
-        <p v-if="library.status === 'loading'">正在加载索引…</p>
-        <template v-else>
-          <p class="msg">{{ library.error || '索引尚未加载' }}</p>
-          <button @click="library.loadIndex()">重试</button>
-        </template>
-      </div>
+      <main class="main">
+        <FolderBrowser v-show="tab === 'browse'" />
+        <QueueList v-if="tab === 'queue'" />
+      </main>
+
+      <p v-if="player.error" class="player-error" @click="player.error = ''">{{ player.error }}</p>
+
+      <PlayerBar />
+    </template>
+
+    <main v-else class="main state">
+      <p v-if="library.status === 'loading'">正在加载索引…</p>
+      <template v-else>
+        <p class="msg">{{ library.error || '索引尚未加载' }}</p>
+        <button @click="library.loadIndex()">重试</button>
+      </template>
     </main>
   </div>
 </template>
@@ -80,6 +101,28 @@ watch(
   flex: 1;
 }
 
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid #2a2c34;
+}
+
+.tabs button {
+  padding: 8px 16px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tabs button.active {
+  color: var(--fg);
+  border-bottom-color: #6366f1;
+}
+
 .main {
   flex: 1;
   min-height: 0;
@@ -91,7 +134,6 @@ watch(
   align-items: center;
   justify-content: center;
   gap: 14px;
-  height: 100%;
   padding: 24px;
   text-align: center;
 }
@@ -101,6 +143,15 @@ watch(
   max-width: 480px;
   color: var(--fg-muted);
   line-height: 1.6;
+}
+
+.player-error {
+  margin: 0;
+  padding: 8px 16px;
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+  font-size: 13px;
+  cursor: pointer;
 }
 
 button {

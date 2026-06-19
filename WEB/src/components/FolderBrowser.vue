@@ -2,9 +2,12 @@
 import { ref, computed } from 'vue'
 import { RecycleScroller } from 'vue-virtual-scroller'
 import { useLibraryStore } from '../stores/library'
+import { usePlayerStore } from '../stores/player'
 import { buildTree, nodeAt, listEntries } from '../lib/tree'
+import { trackTitle, artistText } from '../lib/display'
 
 const library = useLibraryStore()
+const player = usePlayerStore()
 
 // 当前所在目录的路径段（[] = 根）。文件夹浏览的唯一可变状态。
 const currentPath = ref([])
@@ -45,16 +48,11 @@ function selectSong(file) {
   selectedPath.value = file.path
 }
 
-// 歌曲主标题：优先解析出的 title，没有就用文件名
-function songTitle(file) {
-  return file.title || file.name
-}
-
-// 歌手：index.json 里是列表（0 到多个），多人用 / 连接显示。
-// 兼容旧索引里 artist 仍是字符串的情况。
-function artistText(file) {
-  const a = file.artist
-  return Array.isArray(a) ? a.join(' / ') : a || ''
+// 双击歌曲：把当前目录（不递归）所有歌按显示顺序设为队列，从该首开始播
+function playSong(file) {
+  const songs = currentNode.value?.songs || []
+  const start = songs.findIndex((s) => s.path === file.path)
+  if (start >= 0) player.playList(songs, start)
 }
 </script>
 
@@ -96,11 +94,16 @@ function artistText(file) {
       <div
         v-else
         class="row song"
-        :class="{ selected: item.file.path === selectedPath }"
+        :class="{
+          selected: item.file.path === selectedPath,
+          playing: item.file.path === player.currentTrack?.path,
+        }"
         @click="selectSong(item.file)"
+        @dblclick="playSong(item.file)"
+        title="双击播放"
       >
-        <span class="icon">🎵</span>
-        <span class="title">{{ songTitle(item.file) }}</span>
+        <span class="icon">{{ item.file.path === player.currentTrack?.path ? '🔊' : '🎵' }}</span>
+        <span class="title">{{ trackTitle(item.file) }}</span>
         <span v-if="artistText(item.file)" class="artist">{{ artistText(item.file) }}</span>
       </div>
     </RecycleScroller>
@@ -172,6 +175,10 @@ function artistText(file) {
 
 .row.song.selected {
   background: #2a2540;
+}
+
+.row.song.playing .title {
+  color: #818cf8;
 }
 
 .icon {

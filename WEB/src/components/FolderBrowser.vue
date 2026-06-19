@@ -54,6 +54,18 @@ function playSong(file) {
   const start = songs.findIndex((s) => s.path === file.path)
   if (start >= 0) player.playList(songs, start)
 }
+
+// 点「＋」加入队列末尾（不打断当前播放）；按钮短暂变 ✓ 作为反馈
+const justAdded = ref('')
+let addTimer
+function addToQueue(file) {
+  player.enqueue(file)
+  justAdded.value = file.path
+  clearTimeout(addTimer)
+  addTimer = setTimeout(() => {
+    justAdded.value = ''
+  }, 900)
+}
 </script>
 
 <template>
@@ -103,8 +115,18 @@ function playSong(file) {
         title="双击播放"
       >
         <span class="icon">{{ item.file.path === player.currentTrack?.path ? '🔊' : '🎵' }}</span>
-        <span class="title">{{ trackTitle(item.file) }}</span>
-        <span v-if="artistText(item.file)" class="artist">{{ artistText(item.file) }}</span>
+        <div class="text">
+          <span class="title">{{ trackTitle(item.file) }}</span>
+          <span v-if="artistText(item.file)" class="artist">{{ artistText(item.file) }}</span>
+        </div>
+        <button
+          class="add"
+          :class="{ done: item.file.path === justAdded }"
+          title="加入当前队列"
+          @click.stop="addToQueue(item.file)"
+        >
+          {{ item.file.path === justAdded ? '✓' : '＋' }}
+        </button>
       </div>
     </RecycleScroller>
 
@@ -187,18 +209,79 @@ function playSong(file) {
 }
 
 .title {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.meta,
-.artist {
+/* 文件夹行：名称占满剩余宽度 */
+.row.folder .title {
+  flex: 1;
+}
+
+/* 歌曲行：标题 / 歌手两行，左对齐（同队列列表） */
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.text .title {
+  font-size: 14px;
+}
+
+.text .artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.meta {
   flex: none;
   color: var(--fg-muted);
   font-size: 13px;
+}
+
+/* 加入队列按钮：默认隐藏，hover 行时显示（同 QueueList 删除按钮做法），无边框 */
+.add {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.row.song:hover .add {
+  opacity: 1;
+}
+
+.add:hover {
+  color: #818cf8;
+}
+
+/* 刚加入：保持可见并显示成功色 */
+.add.done {
+  opacity: 1;
+  color: #4ade80;
+}
+
+/* 触屏 / 窄屏没有 hover：按钮常显，保证可点 */
+@media (max-width: 720px) {
+  .add {
+    opacity: 1;
+  }
 }
 
 .empty {

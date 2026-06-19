@@ -140,6 +140,12 @@ export const usePlayerStore = defineStore('player', () => {
     playAt(startIndex)
   }
 
+  // 把单首追加到队列末尾（浏览里点「＋」）。纯追加：允许重复、不自动播放、不打断当前曲。
+  function enqueue(song) {
+    if (!song) return
+    queue.value = [...queue.value, song]
+  }
+
   function jumpTo(index) {
     playAt(index)
   }
@@ -236,6 +242,7 @@ export const usePlayerStore = defineStore('player', () => {
     error,
     trackCover,
     playList,
+    enqueue,
     jumpTo,
     togglePlay,
     next,

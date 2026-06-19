@@ -17,6 +17,16 @@
 
 body {
   margin: 0;
+  /* 整体禁止选中文本：点击列表项/标题时不再误选高亮，体验更像应用 */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 输入框里的文本仍可选中（搜索框、登录框） */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 #app {

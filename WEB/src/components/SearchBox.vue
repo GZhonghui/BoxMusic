@@ -41,6 +41,18 @@ function playResult(file) {
   open.value = false
 }
 
+// 点「＋」加入队列末尾（不打断当前播放）；按钮短暂变 ✓ 作为反馈（同 FolderBrowser）
+const justAdded = ref('')
+let addTimer
+function addToQueue(file) {
+  player.enqueue(file)
+  justAdded.value = file.path
+  clearTimeout(addTimer)
+  addTimer = setTimeout(() => {
+    justAdded.value = ''
+  }, 900)
+}
+
 function onKeydown(e) {
   if (e.key === 'Escape') {
     open.value = false
@@ -78,11 +90,21 @@ onUnmounted(() => window.removeEventListener('mousedown', onDocMouseDown))
           v-slot="{ item }"
         >
           <div class="result" @dblclick="playResult(item)" title="双击播放">
-            <div class="title">{{ trackTitle(item) }}</div>
-            <div class="sub">
-              <span v-if="artistText(item)" class="artist">{{ artistText(item) }}</span>
-              <span class="path">{{ item.path }}</span>
+            <div class="text">
+              <div class="title">{{ trackTitle(item) }}</div>
+              <div class="sub">
+                <span v-if="artistText(item)" class="artist">{{ artistText(item) }}</span>
+                <span class="path">{{ item.path }}</span>
+              </div>
             </div>
+            <button
+              class="add"
+              :class="{ done: item.path === justAdded }"
+              title="加入当前队列"
+              @click.stop="addToQueue(item)"
+            >
+              {{ item.path === justAdded ? '✓' : '＋' }}
+            </button>
           </div>
         </RecycleScroller>
         <p v-if="matches.total > matches.list.length" class="note">
@@ -139,6 +161,9 @@ onUnmounted(() => window.removeEventListener('mousedown', onDocMouseDown))
 }
 
 .result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   height: 52px;
   padding: 6px 14px;
   border-bottom: 1px solid #1f2127;
@@ -149,11 +174,52 @@ onUnmounted(() => window.removeEventListener('mousedown', onDocMouseDown))
   background: #262830;
 }
 
+.result .text {
+  flex: 1;
+  min-width: 0;
+}
+
 .result .title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
+}
+
+/* 加入队列按钮：默认隐藏，hover 行时显示（同 FolderBrowser） */
+.add {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.result:hover .add {
+  opacity: 1;
+}
+
+.add:hover {
+  color: #818cf8;
+}
+
+.add.done {
+  opacity: 1;
+  color: #4ade80;
+}
+
+/* 触屏 / 窄屏没有 hover：按钮常显，保证可点 */
+@media (max-width: 720px) {
+  .add {
+    opacity: 1;
+  }
 }
 
 .result .sub {

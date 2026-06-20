@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { RecycleScroller } from 'vue-virtual-scroller'
 import { useLibraryStore } from '../stores/library'
 import { usePlayerStore } from '../stores/player'
@@ -14,6 +14,20 @@ const currentPath = ref([])
 
 // 选中的歌曲 path（单击选中；双击播放留到第 4 步）
 const selectedPath = ref('')
+
+// 虚拟列表实例 + 各层滚动位置记忆（scrollMemory[depth] = 该层 scrollTop）。
+// 进子目录前存下当前层滚动，面包屑跳回时恢复；被退出的更深层位置丢弃。
+const scroller = ref(null)
+const scrollMemory = []
+
+function scrollTop() {
+  return scroller.value?.$el?.scrollTop || 0
+}
+function setScroll(pos) {
+  nextTick(() => {
+    if (scroller.value?.$el) scroller.value.$el.scrollTop = pos
+  })
+}
 
 // 目录树：files 变了才重建（重新加载索引时）
 const tree = computed(() => buildTree(library.files))
@@ -34,14 +48,19 @@ const crumbs = computed(() => {
 })
 
 function enterFolder(name) {
+  scrollMemory[currentPath.value.length] = scrollTop() // 记住当前层滚动
   currentPath.value = [...currentPath.value, name]
   selectedPath.value = ''
+  setScroll(0) // 进入的子目录从顶部看起
 }
 
 // 跳到面包屑第 depth 级（0 = 根）
 function jumpTo(depth) {
+  const pos = scrollMemory[depth] || 0
+  scrollMemory.length = depth // 丢弃该层及更深层（已退出的目录）的滚动记忆
   currentPath.value = currentPath.value.slice(0, depth)
   selectedPath.value = ''
+  setScroll(pos) // 恢复回到的那层之前的滚动
 }
 
 function selectSong(file) {
@@ -88,6 +107,7 @@ function addToQueue(file) {
     <!-- 当前目录：文件夹在前、歌曲在后；单层几千条用虚拟滚动兜底 -->
     <RecycleScroller
       v-if="entries.length"
+      ref="scroller"
       class="list"
       :items="entries"
       :item-size="48"

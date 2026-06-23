@@ -82,7 +82,7 @@
 **播放与队列的关系**（只有一个「当前播放队列」，不做收藏夹、不做手动建歌单）
 - 在某个文件夹里双击一首歌 → 把**该文件夹内（不递归）的所有歌曲**按显示顺序设为队列，并从双击那首开始播放
 - 在搜索结果里双击一首歌 → 把搜索结果设为队列，从该首开始
-- 队列是临时的、可手动编辑（增删/排序/清空），不持久化成命名歌单
+- 队列会**持久化到 localStorage**：刷新 / 重开浏览器后恢复上次的队列与当前曲（恢复后停在当前曲、不自动播放），但仍**不固化成命名歌单**（只有唯一的临时队列，可随时增删/排序/清空）。失效项（索引里已不存在的歌）只在重新加载索引后清理，见 §八第 11 步
 
 **右侧 — 沉浸区**（大面积视觉焦点，封面 / 歌词二选一）
 - 顶部一个分段切换：`封面` | `歌词`
@@ -189,6 +189,7 @@
 | `index_cache` | 本地 index.json 副本（用于秒开） |
 | `index_cache_rev` | 远端 index 的 rev/版本号，判断要不要重拉 |
 | `settings` | `{ play_mode, volume }` |
+| `queue` | 播放队列快照 `{ items: [song...], index }`（刷新后恢复，见 §八第 11 步） |
 
 > 注：`index_cache` 约 1–3MB（万级曲库），在 localStorage ~5MB 上限内没问题；若日后曲库涨到几万首接近上限，再换 IndexedDB。
 
@@ -196,8 +197,8 @@
 
 - `accessToken` — 短时令牌
 - `currentTrack` — 正在播放的曲目
-- `queue` — 当前播放队列
-- `currentIndex` — 队列中位置
+- `queue` — 当前播放队列（变化时镜像写入 localStorage `queue`，启动时恢复）
+- `currentIndex` — 队列中位置（随 `queue` 一并持久化 / 恢复）
 - `isPlaying` / `progress` / `volume`
 
 ---
@@ -325,6 +326,7 @@
 > 原计划 8 步已全部完成。后续按需追加的小功能：
 > - [x] 第 9 步：文件夹视图——单曲加入当前队列（hover「＋」按钮）—— 已完成
 > - [x] 第 10 步：搜索结果同样支持 hover「＋」加入队列 + 文件夹浏览滚动位置记忆 —— 已完成并验证
+> - [x] 第 11 步：播放队列持久化到 localStorage + 重新加载索引后清理失效项 —— 已完成并验证
 
 ### 1. 登录 + token 刷新机制（确保 API 能调通）✅ 已完成
 实现说明：
@@ -448,6 +450,44 @@ TODO 验证：
 - ✅ 搜索结果 hover 出现「＋」，点击加入队列末尾、不打断当前播放、不收起浮层
 - ✅ 长目录进子目录再用面包屑跳回，滚动位置保持
 - ✅ 退出后再次进入该文件夹，从顶部开始（记忆已丢弃）
+
+### 11. 播放队列持久化 + 索引更新后清理失效项 ✅ 已完成
+> 动机：现在 `queue` / `currentIndex` 只在内存（Pinia），刷新或重开浏览器就清空。希望队列能跨刷新保留；同时在本地脚本更新过索引后，把队列里已不存在的歌（路径在新 `index.json` 里查不到）清掉，避免点了播不出来。
+
+实现要点（沿用既有最简做法，不引新依赖）：
+
+**持久化什么**
+- 新增 localStorage key `queue`，存 `{ items: [song...], index }`：
+  - `items`：队列里每首歌的**完整对象**（`{ path, name, artist, title, lrc }`，本就来自 `index.json`，小而自洽）。存整对象而非只存 `path`——恢复后无需依赖 library 加载顺序、可直接渲染队列，路径仍是后续清理 / 取直链的唯一标识。
+  - `index`：`currentIndex`，用于恢复「当前曲」定位。
+- **不持久化** `isPlaying` / `progress` / 临时直链：直链 4 小时会过期，且 iOS 首播必须用户手势。恢复后是「停在当前曲、未播放」状态，用户点播放或双击才出声（与第 9 步「enqueue 永不自动播放」一致）。
+
+**写时机**
+- `queue` / `currentIndex` 变化时写回（`playList` / `enqueue` / `removeAt` / `moveItem` / `clear` / 切歌都会改）。用一个 `persistQueue()` 收口，或对 `queue`+`currentIndex` 做深 `watch` 统一落盘。全程 `try/catch`（localStorage 满 / 不可用不影响播放，与 `index_cache` 写入同样处理）。
+
+**恢复时机**
+- player store 初始化时读 `queue`：填回 `queue` 与 `currentIndex`，并把 `currentTrack` 设为 `queue[index]`（**只设引用、不取直链、不播放**）。读不到 / 解析失败 → 当作空队列，不报错。
+
+**清理失效项（核心诉求，只在「索引就绪后」做一次）**
+- 触发点：`library` 成功拿到**非空** `files` 之后——即初次渲染（缓存或下载）以及每次 `revalidate` / `reload()` 取到新 `files`。
+- **索引加载失败 / `files` 为空时绝不清理**（离线 / 远端临时不可用时保留队列，避免误清空）。
+- 做法：用新 `files[].path` 建一个 `Set`，遍历 `queue` 把 path 不在 Set 里的项剔除；`currentIndex` **复用既有 `removeAt` 的下标调整规则**（删当前项后下一项顶上、删当前项之前的项 index 自减、删空则 index = -1），逐项或批量套用同款逻辑即可，不另写一套。
+- **不打断正在播放的音频**：清理只动 `queue` 数组与 `currentIndex`；`<audio>` 已在流的那首即使被移出队列也放完当前（直链仍在内存），下一首 / 上一首按清理后的新队列走。
+
+不做：跨设备同步队列、持久化播放进度 / 续播位置、把失效项做成「失效但保留灰显」（直接剔除最简单可预测）、在每次播放 / 每帧都做清理（只在索引更新这一个时机做）。
+
+实现说明：
+- `src/stores/player.js`：新增 LS key `queue`。`loadQueue()` 在 store 初始化时恢复 `queue` + `currentIndex`（坏快照当空队列），只设引用、不取直链、不播放；`persistQueue()` 由 `watch([queue, currentIndex], …, { deep: true })` 在队列 / 位置变化时落盘（深监听以捕获 `removeAt` 的原地 `splice`），`try/catch` 包裹不影响播放。`clear()` 一并把空队列写回。
+- `src/stores/player.js` `pruneToValid(validFiles)`：用 `files[].path` 建 `Set`，一次遍历重建保留项数组；`currentIndex` 沿用 removeAt 规则（当前曲之前的失效项 → index 自减；当前曲本身失效 → 下一首顶上；队列清空 → -1）；无失效项时直接返回不改动；只动 `queue` / `currentIndex`，不触碰 `<audio>`，不打断已在流的当前曲。
+- `src/stores/library.js`：`applyData()` 在拿到**非空** `files` 后调用 `usePlayerStore().pruneToValid(files.value)`；`not_found` / 加载失败分支不走 `applyData`，故离线 / 索引缺失时队列不被清理。`library` 单向依赖 `player`，无循环引用。
+
+TODO 验证：
+- ✅ 建好队列后刷新页面 → 队列与当前曲恢复，停在当前曲、不自动出声
+- ✅ 关掉浏览器重开 → 队列仍在
+- ✅ 本地脚本删掉队列里某首再更新索引 → 重新加载索引后该首从队列消失，其余顺序不变、currentIndex 正确
+- ✅ 删的是当前正在播放那首 → 不打断当前播放，下一首走清理后的队列
+- ✅ 断网 / 索引加载失败 → 队列**不被清空**
+- ✅ localStorage 写入异常不影响播放
 
 ---
 

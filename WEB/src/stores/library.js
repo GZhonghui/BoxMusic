@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchWithAuth, getTemporaryLink } from '../dropbox/api'
+import { usePlayerStore } from './player'
 
 // 索引固定路径（App folder 内），应用内不可配置（见 PLAN.md 四）
 const INDEX_PATH = '/metainfo/index.json'
@@ -54,6 +55,8 @@ export const useLibraryStore = defineStore('library', () => {
     files.value = data.files
     settings.value = data.settings || {}
     loadCover()
+    // 索引就绪后清理持久化队列里的失效项（仅在非空时，避免离线误清空）
+    if (files.value.length) usePlayerStore().pruneToValid(files.value)
   }
 
   // 解析 settings.default_cover 的临时直链（同一张图只解析一次；失败留空走占位）

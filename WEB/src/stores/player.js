@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { getTemporaryLink } from '../dropbox/api'
 import { extractCover } from '../lib/cover'
 import { trackTitle } from '../lib/display'
@@ -7,6 +7,7 @@ import { trackTitle } from '../lib/display'
 // 播放模式：顺序 / 单曲循环 / 列表循环 / 随机
 export const MODES = ['order', 'repeat-one', 'repeat-all', 'shuffle']
 const LS_SETTINGS = 'settings' // { play_mode, volume }
+const LS_QUEUE = 'queue'       // { items: [song...], index }，刷新后恢复队列（见 PLAN.md 第 11 步）
 
 // 播放器 + 队列。只有一个「当前播放队列」（见 PLAN.md：不做收藏夹 / 命名歌单）。
 // 第 4 步只做顺序播放；播放模式（循环/随机）留到第 6 步。
@@ -26,9 +27,13 @@ export const usePlayerStore = defineStore('player', () => {
 
   const currentTrack = computed(() => queue.value[currentIndex.value] || null)
 
-  // 启动时恢复上次的播放模式 / 音量
+  // 启动时恢复上次的播放模式 / 音量 / 队列
   loadSettings()
+  loadQueue()
   audio.volume = volume.value
+
+  // 队列或当前位置变化时镜像写入 localStorage（深监听以捕获 splice 原地改动）
+  watch([queue, currentIndex], persistQueue, { deep: true })
 
   audio.addEventListener('timeupdate', () => { progress.value = audio.currentTime })
   audio.addEventListener('durationchange', () => { duration.value = audio.duration || 0 })
@@ -191,6 +196,59 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
+  // 启动恢复队列：只填回 queue / currentIndex / currentTrack，不取直链、不自动播放
+  // （直链 4h 会过期，iOS 首播也需手势——用户点播放或双击才出声）。
+  function loadQueue() {
+    try {
+      const data = JSON.parse(localStorage.getItem(LS_QUEUE) || 'null')
+      if (!data || !Array.isArray(data.items)) return
+      queue.value = data.items
+      const i = data.index
+      currentIndex.value = (typeof i === 'number' && i >= 0 && i < data.items.length) ? i : -1
+    } catch {
+      // 队列快照损坏：当作空队列，忽略
+    }
+  }
+
+  function persistQueue() {
+    try {
+      localStorage.setItem(LS_QUEUE, JSON.stringify({ items: queue.value, index: currentIndex.value }))
+    } catch (e) {
+      // localStorage 满 / 不可用：不影响播放，忽略
+      console.warn('[BoxMusic] 保存播放队列失败：', e)
+    }
+  }
+
+  // 索引更新后清理失效项：剔除 path 不在新 files 里的歌（见 PLAN.md 第 11 步）。
+  // 只由 library 在拿到「非空」files 后调用；索引加载失败 / 为空时不会调到这里，避免误清空。
+  // currentIndex 沿用 removeAt 的下标调整规则；不打断已在流的音频（只动 queue 与 currentIndex）。
+  function pruneToValid(validFiles) {
+    if (!queue.value.length) return
+    const valid = new Set(validFiles.map((f) => f.path))
+    const ci = currentIndex.value
+    const kept = []
+    let newCi = ci
+    let currentRemoved = false
+    for (let i = 0; i < queue.value.length; i++) {
+      if (valid.has(queue.value[i].path)) {
+        kept.push(queue.value[i])
+      } else if (i < ci) {
+        newCi-- // 删的是当前曲之前的，下标左移
+      } else if (i === ci) {
+        currentRemoved = true // 删的是当前曲，下一首顶上（newCi 已是顶上来那首的下标）
+      }
+    }
+    if (kept.length === queue.value.length) return // 没有失效项，原样不动
+    queue.value = kept
+    if (ci < 0 || !kept.length) {
+      currentIndex.value = kept.length ? newCi : -1
+    } else if (currentRemoved) {
+      currentIndex.value = Math.min(newCi, kept.length - 1)
+    } else {
+      currentIndex.value = newCi
+    }
+  }
+
   // 从队列移除某项，并把 currentIndex 调到正确位置
   function removeAt(index) {
     if (index < 0 || index >= queue.value.length) return
@@ -262,5 +320,6 @@ export const usePlayerStore = defineStore('player', () => {
     removeAt,
     moveItem,
     clear,
+    pruneToValid,
   }
 })

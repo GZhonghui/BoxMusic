@@ -2,7 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { getTemporaryLink } from '../dropbox/api'
 import { extractCover } from '../lib/cover'
-import { trackTitle } from '../lib/display'
+import { trackTitle, artistText } from '../lib/display'
+import { setupMediaSession, updateMediaMetadata, setPlaybackState } from '../lib/mediaSession'
+import { useLibraryStore } from './library'
 
 // 播放模式：顺序 / 单曲循环 / 列表循环 / 随机
 export const MODES = ['order', 'repeat-one', 'repeat-all', 'shuffle']
@@ -35,10 +37,19 @@ export const usePlayerStore = defineStore('player', () => {
   // 队列或当前位置变化时镜像写入 localStorage（深监听以捕获 splice 原地改动）
   watch([queue, currentIndex], persistQueue, { deep: true })
 
+  // 系统媒体卡片（通知栏 / 锁屏）：注册控制按钮 + 跟随曲目/封面更新元数据
+  setupMediaSession({
+    play: () => { if (currentTrack.value) audio.play().catch(() => {}) },
+    pause: () => audio.pause(),
+    prev,
+    next,
+  })
+  watch([currentTrack, trackCover], syncMediaSession)
+
   audio.addEventListener('timeupdate', () => { progress.value = audio.currentTime })
   audio.addEventListener('durationchange', () => { duration.value = audio.duration || 0 })
-  audio.addEventListener('play', () => { isPlaying.value = true })
-  audio.addEventListener('pause', () => { isPlaying.value = false })
+  audio.addEventListener('play', () => { isPlaying.value = true; setPlaybackState('playing') })
+  audio.addEventListener('pause', () => { isPlaying.value = false; setPlaybackState('paused') })
   audio.addEventListener('ended', () => { onEnded() })
   // 媒体层错误（坏链 / 网络中断）→ 提示并跳下一首，不卡死
   audio.addEventListener('error', () => {
@@ -81,6 +92,24 @@ export const usePlayerStore = defineStore('player', () => {
       return
     }
     setTrackCover(url)
+  }
+
+  // 把当前曲目（歌名/歌手 + 封面）推给系统媒体卡片。
+  // 封面优先用内嵌封面，没有就回退 library 的默认封面直链（与沉浸区同一套优先级），
+  // 两者都没有则省略 artwork（系统回退 favicon）。无当前曲则清空卡片。
+  function syncMediaSession() {
+    const t = currentTrack.value
+    if (!t) {
+      updateMediaMetadata({})
+      setPlaybackState('none')
+      return
+    }
+    let artwork = trackCover.value
+    if (!artwork) {
+      // 懒取 library（避免与 library.js 形成顶层循环依赖）；取不到就留空
+      try { artwork = useLibraryStore().coverUrl || '' } catch { artwork = '' }
+    }
+    updateMediaMetadata({ title: trackTitle(t), artist: artistText(t), artwork })
   }
 
   // 当前曲失败：记下提示并「线性」顺延到下一首。

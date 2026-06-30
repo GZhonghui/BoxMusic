@@ -327,6 +327,7 @@
 > - [x] 第 9 步：文件夹视图——单曲加入当前队列（hover「＋」按钮）—— 已完成
 > - [x] 第 10 步：搜索结果同样支持 hover「＋」加入队列 + 文件夹浏览滚动位置记忆 —— 已完成并验证
 > - [x] 第 11 步：播放队列持久化到 localStorage + 重新加载索引后清理失效项 —— 已完成并验证
+> - [x] 第 12 步：Media Session（系统媒体卡片：通知栏 / 锁屏显示封面 + 歌名歌手 + 播放控制）—— 已完成
 
 ### 1. 登录 + token 刷新机制（确保 API 能调通）✅ 已完成
 实现说明：
@@ -488,6 +489,23 @@ TODO 验证：
 - ✅ 删的是当前正在播放那首 → 不打断当前播放，下一首走清理后的队列
 - ✅ 断网 / 索引加载失败 → 队列**不被清空**
 - ✅ localStorage 写入异常不影响播放
+
+### 12. Media Session（系统媒体卡片）✅ 已完成
+> 动机：之前没把曲目信息喂给系统，安卓通知栏 / iOS 锁屏 / macOS「正在播放」只能回退到 favicon（显示 Vite 图标）+ 网页标题。把已有的封面 + 歌名/歌手 多喂一份给浏览器原生的 `navigator.mediaSession`，系统卡片就能正确显示封面与信息，并支持从通知栏控制播放。
+
+实现要点（纯浏览器原生 API，无新依赖，契合「从简」）：
+- `src/lib/mediaSession.js`（新）：薄封装。`setupMediaSession({play,pause,prev,next})` 注册控制按钮回调；`updateMediaMetadata({title,artist,artwork})` 设 `navigator.mediaSession.metadata`（`MediaMetadata`）；`setPlaybackState()` 同步播放/暂停图标。全程特性检测 + try/catch，不支持的浏览器（无 `mediaSession`）静默跳过——最坏情况 = 原有行为（回退 favicon），无回归。
+- `src/stores/player.js`：store 初始化时 `setupMediaSession`（play→`audio.play`、pause→`audio.pause`、prev/next 复用既有函数）；`watch([currentTrack, trackCover], syncMediaSession)` 在切歌 / 封面读出时刷新元数据；`audio` 的 `play`/`pause` 事件里 `setPlaybackState`。
+- 封面优先级与沉浸区一致：内嵌封面（`trackCover` blob）→ 默认封面（`library.coverUrl` Dropbox 直链）→ 省略 artwork（系统回退 favicon）。读 `library.coverUrl` 用懒取（`useLibraryStore()` 在函数内调用），避免与 `library.js` 顶层循环依赖。
+- 控制按钮范围：播放 / 暂停 / 上一首 / 下一首（最常用四个）。**未做** seek（`seekto`/`seekforward`/`seekbackward`）与 `setPositionState` 进度条，按需再加。
+- **CSP 无需改动**：现有 `img-src 'self' data: blob: https://*.dropboxusercontent.com` 已同时放行 blob 内嵌封面与 Dropbox 直链默认封面；媒体卡片由系统取图，受 `img-src` 管辖。
+- 前提：Media Session 需 HTTPS（或 localhost）；Vercel 部署是 HTTPS，满足。
+
+TODO 验证（需真机 / 桌面 OS 媒体卡片观察）：
+- 播放后安卓通知栏 / iOS 锁屏 / macOS「正在播放」显示正确歌名歌手 + 封面（不再是 Vite 图标）
+- 通知栏的播放/暂停/上一首/下一首按钮生效，图标随播放状态切换
+- 无内嵌封面的歌回退默认封面；都没有时只缺图、信息仍正确
+- 不支持 Media Session 的浏览器照常播放，不报错
 
 ---
 

@@ -359,6 +359,7 @@ TODO 验证：
 ### 3. 文件夹浏览器 + 面包屑导航（能按目录看到歌了）✅ 已完成
 实现说明：
 - `src/lib/tree.js`：纯函数 `buildTree`（由 `files[].path` 建树）/ `nodeAt`（按路径段定位）/ `listEntries`（文件夹在前按名排序、歌曲在后沿用 path 排序）。
+  > **排序说明（易误解，勿改错方向）**：`listEntries` 里**文件夹**用 `name.localeCompare()` 排序；**歌曲不做任何 sort**，只原样保留 `node.songs` 的 push 顺序，即 `index.json` 里 `files[]` 的顺序。因本地脚本生成索引时**已按 `path` 排序**（见第 2 步前置说明），同目录内歌曲最终就呈现为 path（≈文件名）顺序——所以「歌曲沿用 path 排序」是靠上游 index.json 保证、而非 tree.js 自己排。展示标题用 `display.js` 的 `trackTitle = file.title || file.name`，与排序基准（path/文件名）不一定一致；若日后要改成「按显示标题排」，需在 `listEntries` 里对 `songs` 显式 `.sort()`，且先与使用者确认基准（title / name / path 是三回事）。
 - `src/components/FolderBrowser.vue`：面包屑（根节点用 `settings.root_label`）可逐级跳回；当前目录用 `RecycleScroller` 虚拟滚动兜底；`📁` 单击进入、`🎵` 单击选中（双击播放留第 4 步）。
 - `src/App.vue`：占位页换成真正壳子，进入已登录态自动 `loadIndex()`，按 loading / 未就绪 / ready 三态渲染，只有 ready 才显示浏览器。
 TODO 验证：

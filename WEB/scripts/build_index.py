@@ -68,6 +68,17 @@ def to_app_path(abs_path):
     return '/' + rel.replace(os.sep, '/')
 
 
+def natural_sort_key(s):
+    """自然排序键：把字符串按连续数字段切开，数字段转成 int 参与比较，
+    其余文本段保持原样。这样位数不同的数字按数值大小排
+    （1 < 2 < 10 < 100），而不是按字典序（'10' < '2' < '9'）。
+
+    re.split 用捕获组切分，结果里偶数位恒为文本段、奇数位恒为数字段，
+    因此两个键逐位比较时同一位置类型一致，不会出现 int 与 str 相比报错。"""
+    return [int(part) if part.isdigit() else part
+            for part in re.split(r'(\d+)', s)]
+
+
 def scan_files():
     files = []
     for root, _dirs, names in os.walk(DROPBOX_PATH):
@@ -95,8 +106,9 @@ def scan_files():
 
             files.append(entry)
 
-    # 按 path 排序，输出稳定 → 内容没变时 Dropbox 的 rev 不会变，应用不会重复下载
-    files.sort(key=lambda e: e['path'])
+    # 按 path 自然排序：位数不同的数字按数值大小排（1 2 10 100，而非 1 10 100 2）。
+    # 仍是确定性排序，输出稳定 → 内容没变时 Dropbox 的 rev 不会变，应用不会重复下载。
+    files.sort(key=lambda e: natural_sort_key(e['path']))
     return files
 
 
